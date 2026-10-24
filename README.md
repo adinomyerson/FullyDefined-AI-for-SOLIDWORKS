@@ -1,7 +1,10 @@
-# SolidWorks MCP
+# FullyDefined – AI for SOLIDWORKS
 
-**To install: right-click the zip, choose Extract All, then double-click "Install SolidWorks MCP" in the extracted
-folder.**
+**A SolidWorks MCP server** that lets Claude, Gemini/Antigravity and other AI apps build fully defined SOLIDWORKS
+parts, assemblies and drawings.
+
+**To install: download `solidworks-mcp-<version>.zip` from the [Releases page](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/releases), Extract All, then
+double-click "Install SolidWorks MCP".**
 
 Lets an AI assistant build and inspect SolidWorks models. You describe a part in plain language; the assistant uses
 this server's tools to drive SolidWorks, and every result is checked by measuring the model. Works with AI apps
@@ -135,9 +138,10 @@ uv stays.
 
 ## Support
 
-Contact the person who gave you this release. Run `solidworks-mcp doctor` in a new terminal: it checks the setup
-(and SolidWorks, if it is running; it never starts it) and writes a report file. Send them that report with what
-you asked the AI, what happened and what you expected. [files/TESTING.md](files/TESTING.md) lists what helps most.
+Open an issue on GitHub ([Issues](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/issues)), using the bug-report form; include the output of
+`solidworks-mcp doctor`. Run `solidworks-mcp doctor` in a new terminal: it checks the setup (and SolidWorks, if it
+is running; it never starts it) and writes a report file. Attach that report to the issue with what you asked the
+AI, what happened and what you expected. [files/TESTING.md](files/TESTING.md) lists what helps most.
 
 A tool that hangs usually means SolidWorks is showing a dialog: answer it there.
 
