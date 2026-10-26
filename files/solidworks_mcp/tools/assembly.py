@@ -8,7 +8,7 @@ import math
 import os
 
 
-from ..core.api import assembly, doc_title, Err, ok, tool, ToolError, units, value
+from ..core.api import assembly, doc_title, Err, geometry, ok, open_documents, tool, ToolError, units, value
 from ..core.api import sw
 
 logger = logging.getLogger(__name__)
@@ -410,3 +410,295 @@ def move_component(ctx, component, x=None, y=None, z=None, rx=None, ry=None, rz=
                    f"{unit_str}" + (" and turned it" if turned_off >= 1e-7 else "")
                    + ". Suppress or delete the mates that hold it if it must go there.")
     return ok(message, row)
+
+
+def _mate_states(asm) -> dict:
+    """name -> (type, error code, only a warning) of every mate, also mates in folders: one walk of the tree."""
+    return {name: (str(value(feat, "GetTypeName2")),) + tuple(assembly.mate_error(feat))
+            for name, feat in assembly.mate_features(asm)}
+
+
+def _top_level_target(asm, component, action: str):
+    """A top-level component that is not an instance of a component pattern, or a refusal."""
+    comp = assembly.top_level_component(asm, component, action)
+    try:
+        pattern = bool(value(comp, "IsPatternInstance"))
+    except Exception:
+        pattern = False
+    if pattern:
+        raise ToolError(f"{comp.Name2} is an instance of a component pattern: change the pattern instead.", Err.INPUT)
+    return comp
+
+
+@tool(
+    group="assembly",
+    description="Delete a top-level component from the active assembly. SolidWorks deletes the mates that use it with it; the result lists them (name and type), the components left, and any other mate that now has an error. A component inside a sub-assembly is refused (it belongs to the sub-assembly's file), as is an instance of a component pattern.",
+    params={"component": {"type": "string", "description": "Top-level component name from list_components, e.g. Bracket-2"}},
+    required=["component"],
+    needs="assembly",
+)
+def delete_component(ctx, component):
+    asm = ctx.doc
+    comp = _top_level_target(asm, component, "deleted")
+    name = str(comp.Name2)
+    mates_before = _mate_states(asm)
+    sw.assembly.sw_delete_component(asm, comp)
+    left = [str(c.Name2) for c in assembly.components(asm)]
+    if name in left:
+        raise ToolError(f"SolidWorks did not delete {name}", Err.FEATURE, {"component": name})
+    sw.common.sw_rebuild(asm)
+    mates_after = _mate_states(asm)
+    gone = [{"name": n, "type": t} for n, (t, _, _) in mates_before.items() if n not in mates_after]
+    data = {"deleted": name, "mates_deleted": gone, "components_left": left}
+    message = (f"Deleted {name} and {len(gone)} mate(s) that used it"
+               + (f" ({', '.join(m['name'] for m in gone)})" if gone else "") + f"; {len(left)} components left")
+    broken = sorted(n for n, (_, code, _) in mates_after.items() if code and not mates_before.get(n, ("", 0))[1])
+    if broken:
+        data["mate_errors"] = broken
+        message += f". WARNING: these mates now have errors: {', '.join(broken)}"
+    return ok(message, data)
+
+
+@tool(
+    group="assembly",
+    description="Replace a top-level component of the active assembly by another part or assembly file. SolidWorks keeps the component's place and re-attaches the mates it can; nothing is fixed silently: the result lists every mate as kept, broken (with its error) or gone, and the new component's name and position. all_instances (default false) replaces every instance of the same file; configuration is the new file's configuration (default its active one; the result says which). A file named like one already in use (another folder) is refused: SolidWorks cannot load both, so copy_file it to a new name first.",
+    params={"component": {"type": "string", "description": "Top-level component name from list_components, e.g. Bracket-2"},
+            "filepath": {"type": "string", "description": "The part (.sldprt) or assembly (.sldasm) file to put in its place"},
+            "all_instances": {"type": "boolean", "default": False,
+                              "description": "Replace every instance of the component's file, not only this one"},
+            "configuration": {"type": "string", "description": "Configuration of the new file (default its active one)"}},
+    required=["component", "filepath"],
+    needs="assembly",
+)
+def replace_component(ctx, component, filepath, all_instances=None, configuration=None):
+    asm = ctx.doc
+    if all_instances is not None and not isinstance(all_instances, bool):
+        raise ToolError("all_instances must be true or false", Err.INPUT)
+    every = bool(all_instances)
+    comp = _top_level_target(asm, component, "replaced")
+    name = str(comp.Name2)
+    if not isinstance(filepath, str) or not filepath.strip():
+        raise ToolError("Give the filepath of the part or assembly to put in its place", Err.INPUT)
+    path = os.path.abspath(filepath.strip())
+    if os.path.splitext(path)[1].lower() not in (".sldprt", ".sldasm"):
+        raise ToolError("filepath must be a part (.sldprt) or an assembly (.sldasm)", Err.INPUT)
+    if not os.path.isfile(path):
+        raise ToolError(f"No such file: {path}", Err.INPUT)
+    old_path = str(value(comp, "GetPathName") or "")
+    if os.path.normcase(old_path) == os.path.normcase(path):
+        raise ToolError(f"{name} already is {path}", Err.INPUT)
+    if os.path.normcase(str(value(asm, "GetPathName") or "")) == os.path.normcase(path):
+        raise ToolError("An assembly cannot be put inside itself", Err.INPUT)
+    # SolidWorks holds one document per file name: another file of the same name cannot be loaded beside it
+    same_name = [p for p in [old_path] + [str(value(d, "GetPathName") or "") for d in open_documents(ctx.app)]
+                 if p and os.path.basename(p).lower() == os.path.basename(path).lower()
+                 and os.path.normcase(p) != os.path.normcase(path)]
+    if same_name:
+        raise ToolError(f"{same_name[0]} has the same file name as {path} and is in use: SolidWorks cannot load "
+                        f"both. Rename one (copy_file) first.", Err.INPUT)
+    configs, active = sw.assembly.sw_configurations(ctx.app, path)
+    if configuration is not None:
+        chosen = next((c for c in configs if c.lower() == str(configuration).strip().lower()), None)
+        if chosen is None:
+            raise ToolError(f"{os.path.basename(path)} has no configuration '{configuration}'. "
+                            f"Configurations: {', '.join(configs) or 'none read'}", Err.INPUT)
+        config_from = "given"
+    else:
+        chosen, config_from = active, "the file's active configuration"
+        if not chosen:
+            raise ToolError(f"Could not read the configurations of {path}", Err.INPUT)
+
+    before = {(str(c.Name2), os.path.normcase(str(value(c, "GetPathName") or ""))) for c in assembly.components(asm)}
+    mates_before = _mate_states(asm)
+    targets = [n for n, p in before if p == os.path.normcase(old_path)] if every else [name]
+    done = sw.assembly.sw_replace_component(asm, comp, path, chosen, every)
+    sw.common.sw_rebuild(asm)
+    sw.common.sw_clear_selection(asm)
+
+    after = {(str(c.Name2), os.path.normcase(str(value(c, "GetPathName") or ""))): c for c in assembly.components(asm)}
+    new = [c for key, c in after.items() if key not in before and key[1] == os.path.normcase(path)]
+    replaced = [n for n in targets if (n, os.path.normcase(old_path)) not in after]
+    left = [n for n in targets if n not in replaced]
+    if not done or not new or left:
+        changed = sorted(set(after) ^ before)
+        raise ToolError(f"SolidWorks did not replace {', '.join(left or targets)} by {os.path.basename(path)}"
+                        + (f". The components did change: {', '.join(n for n, _ in changed)} - check list_components"
+                           if changed else "; the assembly is as it was"), Err.FEATURE,
+                        {"replaced": replaced, "not_replaced": left or targets,
+                         "new_components": [str(c.Name2) for c in new]})
+    unit_str = units.label(None)
+    rows = []
+    for c in new:
+        try:
+            rows.append({"name": str(c.Name2), "origin_in_assembly": geometry.point_in_unit(assembly.transform(c)[1])})
+        except Exception:
+            rows.append({"name": str(c.Name2)})
+    mates_after = _mate_states(asm)
+    broken = [dict({"name": n, "type": t, "error_code": code},
+                   **({"warning_only": True} if warning else {}),
+                   **({"had_error_before": True} if mates_before.get(n, ("", 0))[1] else {}))
+              for n, (t, code, warning) in mates_after.items() if code]
+    gone = [{"name": n, "type": t} for n, (t, _, _) in mates_before.items() if n not in mates_after]
+    kept = [n for n, (_, code, _) in mates_after.items() if n in mates_before and not code]
+    data = {"replaced": replaced, "new_components": rows, "file": path, "configuration": chosen,
+            "configuration_from": config_from, "all_instances": every, "mates_kept": kept, "mates_broken": broken,
+            "mates_gone": gone, "unit": unit_str}
+    message = (f"Replaced {', '.join(replaced)} by {os.path.basename(path)} ({chosen}, {config_from}): "
+               f"{', '.join(r['name'] + ' at ' + str(r.get('origin_in_assembly')) for r in rows)} {unit_str}; "
+               f"mates kept {len(kept)}, broken {len(broken)}, gone {len(gone)}")
+    if broken:
+        message += f". Broken (not fixed): {', '.join(b['name'] for b in broken)}"
+    if gone:
+        message += f". Gone: {', '.join(g['name'] for g in gone)}"
+    return ok(message, data)
+
+
+_DIRECTIONS = {"+x": ("x", 0, 1), "-x": ("x", 0, -1), "+y": ("y", 1, 1), "-y": ("y", 1, -1),
+               "+z": ("z", 2, 1), "-z": ("z", 2, -1)}
+EXPLODE_TOLERANCE_M = 1e-6
+
+
+def _origins(comps) -> dict:
+    return {str(c.Name2): assembly.transform(c)[1] for c in comps}
+
+
+@tool(
+    group="assembly",
+    description="Make a new exploded view of the active assembly's configuration: steps move components along the assembly axes (direction +x, -x, +y, -y, +z or -z; distance required). Components are named as in list_components (a path such as Sub-1/Part-1 for a part in a sub-assembly). The view is left shown exploded (show_exploded collapses it); while it is shown, mates, measurements, check_interference and export_stl see the exploded positions, so collapse it first. Mates are not changed. Returns the view's name and each component's measured move per step.",
+    params={"steps": {"type": "array", "minItems": 1,
+                      "items": {"type": "object",
+                                "properties": {"components": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                                               "direction": {"type": "string", "enum": list(_DIRECTIONS)},
+                                               "distance": {"type": "number"}},
+                                "required": ["components", "direction", "distance"]},
+                      "description": "The steps in order: [{components: [...], direction: '+z', distance: 50}]"},
+            "unit": {"type": "string", "description": "mm, cm, m, inch or ft"}},
+    required=["steps"],
+    needs="assembly",
+)
+def create_exploded_view(ctx, steps, unit=None):
+    asm = ctx.doc
+    if not isinstance(steps, list) or not steps:
+        raise ToolError("Give at least one step: {components, direction, distance}", Err.INPUT)
+    plan = []
+    for n, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            raise ToolError(f"Step {n} must be {{components, direction, distance}}", Err.INPUT)
+        names = step.get("components")
+        if not isinstance(names, list) or not names:
+            raise ToolError(f"Step {n}: give the components to move", Err.INPUT)
+        key = str(step.get("direction") or "").strip().lower()
+        if key not in _DIRECTIONS:
+            raise ToolError(f"Step {n}: direction must be {', '.join(_DIRECTIONS)}", Err.INPUT)
+        distance_m = units.size_m(step.get("distance"), unit, f"Step {n}: distance")
+        comps = [assembly.component(asm, name) for name in names]
+        if len({str(c.Name2) for c in comps}) != len(comps):
+            raise ToolError(f"Step {n}: a component is listed twice", Err.INPUT)
+        plan.append((n, comps, key, distance_m))
+    views_before = sw.assembly.sw_exploded_views(asm)
+    collapsed = [v for v in views_before if sw.assembly.sw_is_exploded(asm, v)]
+    for v in collapsed:                     # moves are measured from the collapsed assembly
+        sw.assembly.sw_show_exploded(asm, v, False)
+    start = assembly.positions(asm)
+    steps_before = {str(value(st, "Name")) for st in sw.assembly.sw_explode_steps(asm)}
+    sw.assembly.sw_create_exploded_view(asm)
+    new_views = [v for v in sw.assembly.sw_exploded_views(asm) if v not in views_before]
+    if len(new_views) != 1:
+        raise ToolError("SolidWorks did not make a new exploded view", Err.FEATURE)
+    view = new_views[0]
+
+    def undo(reason):
+        sw.assembly.sw_delete_exploded_view(asm, view)
+        gone = view not in sw.assembly.sw_exploded_views(asm)
+        raise ToolError(f"{reason}. " + (f"The exploded view {view} was taken out again" if gone else
+                                         f"WARNING: the exploded view {view} could not be taken out"), Err.FEATURE)
+
+    # SolidWorks 2026 starts a new view with a step of its own (Chain1, every component; measured: it moved a
+    # fixed part 43 mm): taken out, so the view holds only the steps asked for
+    for own in [st for st in sw.assembly.sw_explode_steps(asm) if str(value(st, "Name")) not in steps_before]:
+        sw.assembly.sw_delete_explode_step(asm, own)
+    if any(str(value(st, "Name")) not in steps_before for st in sw.assembly.sw_explode_steps(asm)):
+        undo("SolidWorks put a step of its own in the new view and it could not be taken out")
+
+    rows, unit_str = [], units.label(unit)
+    for n, comps, key, distance_m in plan:
+        axis, index, sign = _DIRECTIONS[key]
+        before = _origins(comps)
+        moved, tries = None, []
+        for reverse in (False, True):                 # which way the plane's normal points is measured
+            step = sw.assembly.sw_add_explode_step(asm, comps, axis, distance_m, reverse)
+            if step is None:
+                undo(f"Step {n}: SolidWorks did not add it")
+            sw.assembly.sw_show_exploded(asm, view, True)
+            after = _origins(comps)
+            moved = {name: [b - a for a, b in zip(before[name], after[name])] for name in before}
+            tries.append({name: [round(v * 1000, 3) for v in d] for name, d in moved.items()})
+            want = sign * distance_m
+            if all(abs(d[index] - want) <= EXPLODE_TOLERANCE_M and
+                   all(abs(d[i]) <= EXPLODE_TOLERANCE_M for i in range(3) if i != index) for d in moved.values()):
+                break
+            sw.assembly.sw_delete_explode_step(asm, step)
+            moved = None
+        if moved is None:
+            undo(f"Step {n}: the components did not move {distance_m * 1000:g} mm along {key} (measured moves, mm: "
+                 f"{'; then '.join(str(t) for t in tries)})")
+        rows.append({"step": n, "direction": key, "distance": ctx.from_m(distance_m, unit),
+                     "moved": {name: [round(ctx.from_m(v, unit), 4) + 0.0 for v in d] for name, d in moved.items()}})
+    # every component, not only the ones asked for: nothing else may move (a part inside a moved one moves with it)
+    named = {str(c.Name2) for _, comps, _, _ in plan for c in comps}
+    now = assembly.positions(asm)
+    strays = sorted(name for name, (_, t) in start.items() if name in now
+                    and not any(name == m or name.startswith(m + "/") for m in named)
+                    and max(abs(a - b) for a, b in zip(t, now[name][1])) > EXPLODE_TOLERANCE_M)
+    if strays:
+        undo(f"The view also moved {', '.join(strays)}, which no step names")
+    data = {"view": view, "steps": rows, "unit": unit_str, "shown": "exploded", "others_unmoved": True}
+    summary = "; ".join(f"{r['step']}: {', '.join(r['moved'])} {r['distance']:g} {unit_str} {r['direction']}"
+                        for r in rows)
+    note = ""
+    if collapsed:
+        data["collapsed_first"] = collapsed
+        note = f" ({', '.join(collapsed)} collapsed first)"
+    return ok(f"Exploded view {view} with {len(rows)} step(s), shown exploded{note}: {summary}", data)
+
+
+@tool(
+    group="assembly",
+    description="Show the active assembly's exploded view exploded (exploded true) or collapsed (false). name picks the view when the configuration has several (default: its only one). Returns the state read back and which components moved.",
+    params={"exploded": {"type": "boolean", "description": "true = exploded, false = collapsed"},
+            "name": {"type": "string", "description": "Exploded view name, e.g. ExplView1 (default: the only one)"}},
+    required=["exploded"],
+    needs="assembly",
+)
+def show_exploded(ctx, exploded, name=None):
+    asm = ctx.doc
+    if not isinstance(exploded, bool):
+        raise ToolError("exploded must be true or false", Err.INPUT)
+    views = sw.assembly.sw_exploded_views(asm)
+    if not views:
+        raise ToolError("The configuration has no exploded view: create_exploded_view first", Err.INPUT)
+    if name is None:
+        if len(views) > 1:
+            raise ToolError(f"The configuration has {len(views)} exploded views: give name ({', '.join(views)})",
+                            Err.INPUT)
+        view, view_from = views[0], "its only exploded view"
+    else:
+        view = next((v for v in views if v.lower() == str(name).strip().lower()), None)
+        if view is None:
+            raise ToolError(f"No exploded view '{name}'. Exploded views: {', '.join(views)}", Err.INPUT)
+        view_from = "given"
+    before = assembly.positions(asm)
+    was = sw.assembly.sw_is_exploded(asm, view)
+    sw.assembly.sw_show_exploded(asm, view, exploded)
+    state = sw.assembly.sw_is_exploded(asm, view)
+    if state is not None and state != exploded:
+        if was is not None:
+            sw.assembly.sw_show_exploded(asm, view, was)            # a refusal leaves the display as it was
+        raise ToolError(f"SolidWorks shows {view} {'exploded' if state else 'collapsed'}, not as asked; "
+                        f"{'it was put back as it was' if sw.assembly.sw_is_exploded(asm, view) == was else 'WARNING: it could not be put back'}",
+                        Err.FEATURE)
+    moved = assembly.moved_since(asm, before, None)
+    word = "exploded" if exploded else "collapsed"
+    data = {"view": view, "view_from": view_from, "shown": word, "moved": moved, "state_read_back": state is not None}
+    note = "" if state is not None else " (SolidWorks did not report the state; judge by the moves)"
+    return ok(f"{view} is {word}; {len(moved)} component(s) moved{note}", data)

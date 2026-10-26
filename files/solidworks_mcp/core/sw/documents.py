@@ -3,7 +3,10 @@ The tools do the inputs, messages and measuring."""
 
 import logging
 
-from ..com import byref_int, null_object
+import pythoncom
+import win32com.client
+
+from ..com import byref_int, null_object, value
 
 logger = logging.getLogger(__name__)
 
@@ -64,3 +67,44 @@ def sw_save_as(doc, path: str):
 
 def sw_close(app, name: str) -> None:
     app.CloseDoc(name)
+
+
+# Custom properties (swconst.tlb): swCustomInfoText, swCustomPropertyReplaceValue, the add and delete results
+PROPERTY_TEXT, REPLACE_VALUE = 30, 2
+ADD_RESULTS = {0: "added or changed", 1: "failed", 2: "the property exists with another type",
+               3: "the value does not fit the type", 4: "the property exists with an older type"}
+DELETE_RESULTS = {0: "deleted", 1: "not present", 2: "linked to another property"}
+PROPERTY_TYPES = {0: "unknown", 30: "text", 64: "date", 3: "number", 5: "double", 11: "yes_or_no", 105: "equation"}
+
+
+def sw_property_manager(doc, configuration: str):
+    """The custom property manager of a configuration, or of the file itself for ""."""
+    return doc.Extension.CustomPropertyManager(configuration or "")
+
+
+def sw_properties(manager) -> list:
+    """[(name, value as typed, resolved value, type code)] of every property, in SolidWorks' order."""
+    rows = []
+    for name in (value(manager, "GetNames") or []):
+        typed = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BSTR, "")
+        resolved = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BSTR, "")
+        flags = [win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BOOL, False) for _ in range(2)]
+        try:
+            manager.Get6(name, False, typed, resolved, flags[0], flags[1])
+            kind = int(manager.GetType2(name))
+        except Exception as e:
+            logger.debug(f"Property {name}: {e}")
+            kind = 0
+        rows.append((str(name), str(typed.value or ""), str(resolved.value or ""), kind))
+    return rows
+
+
+def sw_set_property(manager, name: str, text: str, kind: int = PROPERTY_TEXT) -> int:
+    """Add a property (text unless kind says otherwise) or replace its value; SolidWorks' add result (0 = added or
+    changed)."""
+    return int(manager.Add3(name, kind or PROPERTY_TEXT, text, REPLACE_VALUE))
+
+
+def sw_delete_property(manager, name: str) -> int:
+    """SolidWorks' delete result (0 = deleted)."""
+    return int(manager.Delete2(name))

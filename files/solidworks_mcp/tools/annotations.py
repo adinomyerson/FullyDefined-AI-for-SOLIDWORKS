@@ -9,7 +9,7 @@ import math
 import os
 
 
-from ..core.api import doc_title, drawing as dwg, Err, ok, tool, ToolError, value
+from ..core.api import assembly, doc_title, drawing as dwg, Err, ok, tool, ToolError, value
 from ..core.api import sw, units
 
 logger = logging.getLogger(__name__)
@@ -311,6 +311,175 @@ def _known(views) -> str:
     return ", ".join(names[:40]) or "none"
 
 
+MARK_TOLERANCE_M = 0.0001          # a centre mark within 0.1 mm (on the model) of a round edge's centre marks it
+
+
+def _round_centres(view) -> list:
+    """[{edge ids, the first edge's object, centre in view coordinates (m), centre in the view's sketch (m)}] of
+    the round edges of a view, one row per centre."""
+    frame = dwg.view_frame(view)
+    r = frame["rot"]
+    across = ((r[0], r[3], r[6]), (r[1], r[4], r[7]))       # the view's right and up, in model directions
+    model, kind, _ = dwg.view_model(view)
+    rows = []
+    for edge in dwg.view_entities(view)[0]:
+        if edge["kind"] not in ("circle", "arc"):
+            continue
+        axis = sw.drawing.sw_circle_axis(edge["_obj"])
+        if axis is not None and kind == 2 and edge.get("component") and model is not None:
+            comp, _ = assembly.find_component(model, edge["component"])
+            axis = assembly.dir_to_asm(comp, axis) if comp is not None else axis
+        if axis is not None and any(abs(sum(a * b for a, b in zip(axis, d))) > 1e-6 for d in across):
+            continue                                        # seen edge-on or slanted: not a round edge here
+        row = next((r for r in rows if math.dist(r["at"], edge["center"]) <= MARK_TOLERANCE_M), None)
+        if row:
+            row["ids"].append(edge["id"])
+        else:
+            rows.append({"ids": [edge["id"]], "_obj": edge["_obj"], "at": edge["center"],
+                         "sketch": dwg.view_to_sketch(frame, *edge["center"])})
+    return rows
+
+
+def _marked(centre, points) -> bool:
+    return any(math.dist(centre["sketch"], p) <= MARK_TOLERANCE_M for p in points)
+
+
+@tool(
+    group="drawing",
+    description="Add centre marks to a drawing view: every hole and round edge in it without one gets a single mark, sized by the drawing's drafting standard. Marks already there (a template can add them when the view is made) are left as they are. Returns each new mark's centre in view coordinates (mm, as list_drawing_views gives them) with the edges it marks.",
+    params={"view": {"type": "string", "description": "View name from list_drawing_views"}},
+    required=["view"],
+    needs="drawing",
+)
+def add_center_marks(ctx, view):
+    drawing = ctx.doc
+    target = dwg.find_view(drawing, view, "add_center_marks")
+    centres = _round_centres(target)
+    if not centres:
+        raise ToolError(f"{target.Name} shows nothing round to mark", Err.INPUT)
+    before = sw.drawing.sw_center_mark_points(target)
+    lacking = [c for c in centres if not _marked(c, before)]
+    data = {"view": str(target.Name), "marks": [], "already_marked": len(centres) - len(lacking)}
+    if not lacking:
+        return ok(f"Every round edge in {target.Name} already has a centre mark ({len(centres)}); nothing added",
+                  dict(data, changed=False))
+    for centre in lacking:
+        sw.drawing.sw_center_mark(drawing, target, centre["_obj"])
+    sw.drawing.sw_finish(drawing)
+    after = sw.drawing.sw_center_mark_points(target)
+    for centre in lacking:
+        if _marked(centre, after):
+            data["marks"].append({"at_view_mm": [round(v * 1000, 3) for v in centre["at"]], "edges": centre["ids"]})
+    still = [i for c in centres if not _marked(c, after) for i in c["ids"]]
+    unmatched = len(after) - len(before) - len(data["marks"])     # made, but on no round edge found here
+    if not data["marks"]:
+        raise ToolError(f"SolidWorks added no centre marks to {target.Name}" +
+                        (f". WARNING: it did add {unmatched} mark(s) that sit on no round edge of the view"
+                         if unmatched > 0 else ""), Err.FEATURE)
+    message = f"Added {len(data['marks'])} centre mark(s) to {target.Name}"
+    if unmatched > 0:
+        data["unmatched_marks"] = unmatched
+        message += f". WARNING: {unmatched} more mark(s) sit on no round edge of the view"
+    if data["already_marked"]:
+        message += f"; {data['already_marked']} centre(s) were marked already"
+    if still:
+        data["without_mark"] = still
+        message += f". No mark on: {', '.join(still)}"
+    return ok(message, dict(data, changed=True))
+
+
+@tool(
+    group="drawing",
+    description="Add centrelines to a drawing view: SolidWorks puts one on every cylinder, cone and slot seen from the side that has none (a template can add them when the view is made). Returns how many were added and how many the view now has; SolidWorks gives no position for a centreline.",
+    params={"view": {"type": "string", "description": "View name from list_drawing_views"}},
+    required=["view"],
+    needs="drawing",
+)
+def add_centerlines(ctx, view):
+    drawing = ctx.doc
+    target = dwg.find_view(drawing, view, "add_centerlines")
+    before = sw.drawing.sw_centerline_count(target)
+    called = sw.drawing.sw_auto_centerlines(drawing, target)
+    sw.drawing.sw_finish(drawing)
+    after = sw.drawing.sw_centerline_count(target)
+    data = {"view": str(target.Name), "added": after - before, "centerlines": after}
+    if after < before:
+        raise ToolError(f"{target.Name} had {before} centreline(s) and now has {after}: check the drawing",
+                        Err.FEATURE, data)
+    if not called and after == before:
+        raise ToolError(f"SolidWorks could not run its centreline command on {target.Name}; nothing changed",
+                        Err.FEATURE)
+    if after > before:
+        return ok(f"Added {after - before} centreline(s) to {target.Name}"
+                  + (f" ({before} were there already)" if before else ""), dict(data, changed=True))
+    if before:
+        return ok(f"{target.Name} already has {before} centreline(s); SolidWorks added none",
+                  dict(data, changed=False))
+    raise ToolError(f"SolidWorks found nothing in {target.Name} for a centreline (no cylinder seen from the side)",
+                    Err.INPUT)
+
+
+def _decimals(number, name: str) -> int:
+    if isinstance(number, bool) or not isinstance(number, (int, float)) or number != int(number) \
+            or not 0 <= number <= 8:
+        raise ToolError(f"{name} must be a whole number from 0 to 8", Err.INPUT)
+    return int(number)
+
+
+@tool(
+    group="drawing",
+    description="Set how many decimals drawing dimensions show: one dimension by its name (list_drawing_views(view=...)), or every dimension in a view. tolerance_decimals sets the decimals of their tolerances too (default: left as they are). Only the display changes, not the model's values; dimensions added later keep the template's decimals, so call it last. Each dimension's precision is read back.",
+    params={"decimals": {"type": "integer", "description": "Decimals shown, 0 to 8"},
+            "dimension": {"type": "string", "description": "A dimension name, e.g. RD1 (or give view)"},
+            "view": {"type": "string", "description": "Every dimension in this view (or give dimension)"},
+            "tolerance_decimals": {"type": "integer", "description": "Decimals of the tolerance, 0 to 8 (default: unchanged)"}},
+    required=["decimals"],
+    needs="drawing",
+)
+def set_dimension_precision(ctx, decimals, dimension=None, view=None, tolerance_decimals=None):
+    drawing = ctx.doc
+    places = _decimals(decimals, "decimals")
+    tol_places = None if tolerance_decimals is None else _decimals(tolerance_decimals, "tolerance_decimals")
+    if (dimension is None) == (view is None):
+        raise ToolError("Give either dimension (one name) or view (all its dimensions), not both", Err.INPUT)
+    if dimension is not None:
+        views = dwg.views(drawing)
+        found = _find_dimensions(drawing, dimension, views)
+        if not found:
+            raise ToolError(f"No dimension named '{dimension}' on this sheet. Dimensions: {_known(views)}", Err.INPUT)
+        if len(found) > 1:
+            raise ToolError(f"{dimension} is in {len(found)} views ({', '.join(str(v.Name) for v, _ in found)}); "
+                            f"give view instead", Err.INPUT)
+    else:
+        target = dwg.find_view(drawing, view, "set_dimension_precision")
+        found = [(target, row) for row in dwg.dimension_rows(target)]
+        if not found:
+            raise ToolError(f"{target.Name} has no dimensions", Err.INPUT)
+    before = [sw.drawing.sw_precision(row["_obj"]) for _, row in found]
+    for (_, row), (_, old_tol) in zip(found, before):
+        sw.drawing.sw_set_precision(row["_obj"], places, old_tol if tol_places is None else tol_places)
+    sw.common.sw_redraw(drawing)
+    after = [sw.drawing.sw_precision(row["_obj"]) for _, row in found]
+    wrong = [row["name"] for (_, row), (got, got_tol), (_, old_tol) in zip(found, after, before)
+             if got != places or got_tol != (old_tol if tol_places is None else tol_places)]
+    if wrong:
+        for (_, row), (old, old_tol) in zip(found, before):
+            sw.drawing.sw_set_precision(row["_obj"], old, old_tol)
+        sw.common.sw_redraw(drawing)
+        back = [sw.drawing.sw_precision(row["_obj"]) for _, row in found] == before
+        raise ToolError(f"SolidWorks did not take the precision for {', '.join(wrong)}; "
+                        + ("all were put back as they were" if back else
+                           "WARNING: they could not all be put back - check list_drawing_views"), Err.FEATURE)
+    rows = [{"view": str(v.Name), "dimension": row["name"], "value": row["value"], "unit": row["unit"],
+             "decimals": got, "tolerance_decimals": got_tol, "decimals_before": old}
+            for (v, row), (got, got_tol), (old, _) in zip(found, after, before)]
+    data = {"dimensions": rows, "count": len(rows),
+            "tolerance": "given" if tol_places is not None else "left as it was"}
+    shown = ", ".join(f"{r['dimension']} ({r['value']} {r['unit']})" for r in rows[:20])
+    return ok(f"{len(rows)} dimension(s) now show {places} decimals: {shown}"
+              + (f"; tolerances {tol_places}" if tol_places is not None else ""), data)
+
+
 @tool(
     group="drawing",
     description="Delete a dimension from a drawing view by the name list_drawing_views(view=...) gives, e.g. RD1. Only the drawing changes; the model dimension stays in the part.",
@@ -485,6 +654,66 @@ def set_title_block(ctx, title=None, drawn_by=None, date=None, scale=None, mater
         if hits:
             data["overlaps"] = hits
             message += f". WARNING: it overlaps {', '.join(hits)} - use a larger sheet or a smaller scale in create_drawing"
+    return ok(message, data)
+
+
+@tool(
+    group="drawing",
+    description="Add a column to the drawing's bill of materials (add_bom_table) that shows a custom property of each item: property is its name, e.g. Material, PartNo or Description; title is the column heading (default: the property name; the result says so). Returns the table as it now reads, and lists the items whose cell is empty (their part has no such property: set_custom_properties on that part). For each part's material, give every part a Material property linked to it ('\"SW-Material@<part file>\"' with set_custom_properties: the file name only, e.g. '\"SW-Material@Bracket.SLDPRT\"', quotes included) and show that: SW-Material itself is refused, as SolidWorks shows it as '$PRP:...' in the table.",
+    params={"property": {"type": "string", "description": "Custom property to show, e.g. Material"},
+            "title": {"type": "string", "description": "Column heading (default: the property name)"}},
+    required=["property"],
+    needs="drawing",
+)
+def add_bom_column(ctx, property, title=None):
+    drawing = ctx.doc
+    prop = str(property or "").strip()
+    if not prop:
+        raise ToolError("Give the name of the custom property to show", Err.INPUT)
+    heading = str(title).strip() if title is not None and str(title).strip() else prop
+    boms = [t for kind, t in dwg.tables(drawing) if kind == "BomFeat"]
+    if not boms:
+        raise ToolError("The drawing has no bill of materials: add_bom_table first", Err.INPUT)
+    if len(boms) > 1:
+        raise ToolError(f"The drawing has {len(boms)} bills of materials; this tool works on a drawing with one",
+                        Err.INPUT)
+    table = boms[0]
+    columns = int(table.ColumnCount)
+    shown = [c for c in range(columns) if sw.drawing.sw_bom_column_property(table, c).lower() == prop.lower()]
+    if shown:
+        raise ToolError(f"The bill of materials already shows {prop} (column {shown[0] + 1})", Err.INPUT)
+    column = sw.drawing.sw_add_bom_column(table, prop, heading)
+    sw.drawing.sw_finish(drawing)
+    if column is None or sw.drawing.sw_bom_column_property(table, column).lower() != prop.lower():
+        if int(table.ColumnCount) > columns:
+            sw.drawing.sw_delete_column(table, int(table.ColumnCount) - 1)  # nothing half-made is left
+            sw.drawing.sw_finish(drawing)
+        raise ToolError(f"SolidWorks could not add a {prop} column to the bill of materials"
+                        + ("" if int(table.ColumnCount) == columns else
+                           ". WARNING: a half-made column is still in the table"), Err.FEATURE)
+    rows = dwg.table_rows(table)
+    unresolved = [row[column] for row in rows[1:] if row[column].startswith("$PRP:")]
+    if unresolved:
+        # measured with SW-Material: the sheet shows "$PRP:AISI 304", not the value
+        sw.drawing.sw_delete_column(table, column)
+        sw.drawing.sw_finish(drawing)
+        kept = "the column was not kept" if int(table.ColumnCount) == columns else \
+            "WARNING: the column could not be taken out again"
+        raise ToolError(f"SolidWorks shows {prop} in a bill of materials as '{unresolved[0]}', not as its value; "
+                        f"{kept}. Give each part a property that links to it instead (in each part: "
+                        f"set_custom_properties with {{\"{prop.removeprefix('SW-')}\": \"\\\"{prop}@<part file>\\\"\"}}), "
+                        f"then add that property's column.", Err.INPUT)
+    name_column = sw.drawing.sw_part_number_column(table)
+    empty = [(row[name_column] if name_column is not None else f"row {i + 1}") for i, row in enumerate(rows[1:])
+             if not row[column].strip()]
+    data = {"property": prop, "title": heading, "title_from": "given" if title is not None and str(title).strip() else "the property name",
+            "column": column + 1, "header": rows[0] if rows else [], "rows": rows[1:]}
+    message = f"Added a {heading} column ({prop}) to the bill of materials: " + "; ".join(
+        f"{row[name_column] if name_column is not None else i + 1}: {row[column] or '(empty)'}"
+        for i, row in enumerate(rows[1:]))
+    if empty:
+        data["empty"] = empty
+        message += f". Empty for {', '.join(empty)}: their part has no {prop} property"
     return ok(message, data)
 
 

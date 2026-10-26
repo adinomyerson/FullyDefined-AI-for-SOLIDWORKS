@@ -44,6 +44,21 @@ Do not run the install check (a short real build in SolidWorks).
 Replace (or with -Uninstall remove) a 'solidworks' server entry in Claude Desktop, Claude Code, Gemini CLI or
 Antigravity that points somewhere else.
 
+.PARAMETER Unattended
+Ask nothing (for the Windows installer, which runs this script without a window): SolidWorks is started for the
+install check only with -Check, and Claude Desktop is restarted only with -RestartClaudeDesktop.
+
+.PARAMETER RestartClaudeDesktop
+With -Unattended: restart Claude Desktop at the end when it is running and its config changed.
+
+.PARAMETER SummaryFile
+Also write the summary to this file, one plain line each (UTF-8): "<app>: <outcome>", "Install check: <result>",
+"Next: <step>", or "STOPPED: <why>" when the install stopped.
+
+.PARAMETER CheckTimeoutS
+How long the install check may take, in seconds (default 300): past it the check stops and the summary says that
+SolidWorks may be showing a message to answer.
+
 .PARAMETER Uninstall
 Remove the server instead of installing it.
 
@@ -67,6 +82,10 @@ param(
     [switch]$NoPath,
     [switch]$Check,
     [switch]$NoCheck,
+    [switch]$Unattended,
+    [switch]$RestartClaudeDesktop,
+    [string]$SummaryFile,
+    [int]$CheckTimeoutS = 300,
     [switch]$Uninstall,
     [switch]$Purge
 )
@@ -79,7 +98,18 @@ $ServerName = 'solidworks'
 function Write-Step([string]$text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
 function Write-Ok([string]$text) { Write-Host "    $text" -ForegroundColor Green }
 function Write-Note([string]$text) { Write-Host "    $text" -ForegroundColor Yellow }
-function Stop-Install([string]$text) { Write-Host ""; Write-Host "STOPPED: $text" -ForegroundColor Red; exit 1 }
+function Stop-Install([string]$text) {
+    Write-Host ""; Write-Host "STOPPED: $text" -ForegroundColor Red
+    Write-Summary @("STOPPED: $text")
+    exit 1
+}
+
+# -SummaryFile: the summary in plain lines, for the Windows installer's last page
+function Write-Summary([string[]]$lines) {
+    if (-not $SummaryFile) { return }
+    try { Set-Content -Path $SummaryFile -Value $lines -Encoding UTF8 }
+    catch { Write-Note "could not write the summary file ($($_.Exception.Message))" }
+}
 
 function Find-Uv {
     $cmd = Get-Command uv -ErrorAction SilentlyContinue
@@ -107,20 +137,42 @@ function Assert-NotRunning([string]$installDir) {
     }
 }
 
-function Get-UserPath([string]$var = 'Path') { return [Environment]::GetEnvironmentVariable($var, 'User') }
+# The user PATH as stored: unexpanded (%USERPROFILE%\... stays so) and with its registry type (Windows keeps it as
+# REG_EXPAND_SZ). [Environment]::SetEnvironmentVariable would write it back expanded, as REG_SZ.
+function Get-UserPath([string]$var = 'Path') {
+    $key = Get-Item 'HKCU:\Environment'
+    return [string]$key.GetValue($var, '', 'DoNotExpandEnvironmentNames')
+}
+
+function Set-UserPath([string]$value, [string]$var = 'Path') {
+    $key = Get-Item 'HKCU:\Environment'
+    $kind = if ($key.GetValueNames() -contains $var) { $key.GetValueKind($var) } else { 'ExpandString' }
+    if ($value -match '%') { $kind = 'ExpandString' }
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name $var -Value $value -Type $kind
+    # tell running programs (Explorer, new terminals) that the environment changed
+    [Environment]::SetEnvironmentVariable('SWMCP_ENV_REFRESH', $null, 'User')
+}
+
+# Entries are compared expanded; everything else (order, separators, other entries) is kept as it is, so adding and
+# then removing an entry gives back exactly the value there was.
+function Test-SameDir([string]$entry, [string]$dir) {
+    return [Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\') -ieq $dir.TrimEnd('\')
+}
 
 function Add-UserPath([string]$dir, [string]$var = 'Path') {
-    $parts = @((Get-UserPath $var) -split ';' | Where-Object { $_ })
-    if ($parts | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }) { return $false }
-    [Environment]::SetEnvironmentVariable($var, (($parts + $dir) -join ';'), 'User')
+    $raw = Get-UserPath $var
+    if (@($raw -split ';' | Where-Object { $_ -and (Test-SameDir $_ $dir) }).Count) { return $false }
+    $new = if (-not $raw) { $dir } elseif ($raw.EndsWith(';')) { "$raw$dir;" } else { "$raw;$dir" }
+    Set-UserPath $new $var
     return $true
 }
 
 function Remove-UserPath([string]$dir, [string]$var = 'Path') {
-    $parts = @((Get-UserPath $var) -split ';' | Where-Object { $_ })
-    $kept = @($parts | Where-Object { $_.TrimEnd('\') -ine $dir.TrimEnd('\') })
+    $raw = Get-UserPath $var
+    $parts = @($raw -split ';')
+    $kept = @($parts | Where-Object { -not ($_ -and (Test-SameDir $_ $dir)) })
     if ($kept.Count -eq $parts.Count) { return $false }
-    [Environment]::SetEnvironmentVariable($var, ($kept -join ';'), 'User')
+    Set-UserPath ($kept -join ';') $var
     return $true
 }
 
@@ -433,7 +485,9 @@ function Invoke-Install {
         if (-not $sldworks) { $checkResult = 'not run (SolidWorks is not installed on this computer)' }
         else {
             $start = $Check
-            if (-not $Check) { $start = (Read-Host "    Start SolidWorks now for the install check? (Y/n)") -notmatch '^[nN]' }
+            if (-not $Check -and -not $Unattended) {
+                $start = (Read-Host "    Start SolidWorks now for the install check? (Y/n)") -notmatch '^[nN]'
+            }
             if ($start) {
                 Write-Ok "starting SolidWorks (a minute or two)"
                 Start-Process $sldworks
@@ -443,8 +497,24 @@ function Invoke-Install {
         }
     }
     if ($swUp -and -not $NoCheck) {
-        & $exe doctor --check
-        $checkResult = if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL (see above; run solidworks-mcp doctor and send the report)' }
+        # Its own process with a time limit: a SolidWorks dialog would otherwise hold a hidden install for ever.
+        # The verdict is doctor's "INSTALL CHECK" line; its exit code also counts warnings (an untested version).
+        $out = Join-Path ([IO.Path]::GetTempPath()) ("swmcp-check-" + [guid]::NewGuid().ToString('N') + ".txt")
+        $proc = Start-Process -FilePath $exe -ArgumentList 'doctor', '--check' -NoNewWindow -PassThru `
+                              -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+        if (-not $proc.WaitForExit($CheckTimeoutS * 1000)) {
+            try { $proc.Kill() } catch { }
+            $checkResult = "not finished in $([int]($CheckTimeoutS / 60)) minutes: SolidWorks may be showing a " +
+                           "message. Answer it in SolidWorks, then run 'solidworks-mcp doctor --check'"
+        }
+        $text = if (Test-Path $out) { Get-Content $out -Raw } else { '' }
+        if ($text) { Write-Host $text }
+        Remove-Item $out, "$out.err" -ErrorAction SilentlyContinue
+        if ($text -match 'INSTALL CHECK: PASS') {
+            $checkResult = if ($text -match 'doctor found (\d+) problem') { "PASS ($($Matches[1]) note(s) above)" } else { 'PASS' }
+        } elseif ($checkResult -eq 'not run') {
+            $checkResult = 'FAIL (see above; run solidworks-mcp doctor and send the report)'
+        }
     }
 
     # The summary
@@ -455,14 +525,17 @@ function Invoke-Install {
         $v = $versions[$app]; $label = if ($v -and $summary[$app] -like 'registered*') { "$app $v" } else { $app }
         if ($summary[$app] -like 'registered*') { Write-Ok "$($label): $($summary[$app])" } else { Write-Note "$($label): $($summary[$app])" }
     }
-    if ($checkResult -eq 'PASS') { Write-Ok "Install check: PASS" } else { Write-Note "Install check: $checkResult" }
+    if ($checkResult -like 'PASS*') { Write-Ok "Install check: $checkResult" } else { Write-Note "Install check: $checkResult" }
 
     $next = @()
     if ($summary['Claude Desktop'] -like 'registered*') {
         $restarted = $false
         if ($desktopChanged -and (Get-ClaudeDesktop)) {
-            $answer = Read-Host ("    Restart Claude Desktop now so it loads SolidWorks MCP? This closes all its windows, " +
-                                 "including Claude Code sessions running in it (y/N)")
+            if ($Unattended) { $answer = if ($RestartClaudeDesktop) { 'y' } else { 'n' } }
+            else {
+                $answer = Read-Host ("    Restart Claude Desktop now so it loads SolidWorks MCP? This closes all its windows, " +
+                                     "including Claude Code sessions running in it (y/N)")
+            }
             if ($answer -match '^[yY]') { Restart-ClaudeDesktop; $restarted = $true; Write-Ok "Claude Desktop restarted" }
         }
         if (-not $restarted -and $desktopChanged) { $next += "Claude Desktop: quit it fully (tray icon > Quit) and open it again" }
@@ -475,6 +548,8 @@ function Invoke-Install {
     Write-Host "Then ask your AI app: 'Connect to SolidWorks and create a new part.'"
     Write-Host "Problems? Run: solidworks-mcp doctor   (in a new terminal) and send the report."
     Write-Host "To remove it: Settings > Apps > Installed apps > SolidWorks MCP > Uninstall (or $InstallDir\Uninstall SolidWorks MCP.cmd)"
+    Write-Summary (@($summary.Keys | ForEach-Object { "$($_): $($summary[$_])" }) + @("Install check: $checkResult") +
+                   @($next | ForEach-Object { "Next: $_" }))
 }
 
 function Invoke-Uninstall {

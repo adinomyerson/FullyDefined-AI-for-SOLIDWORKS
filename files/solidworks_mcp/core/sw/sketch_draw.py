@@ -32,6 +32,14 @@ def sw_arc(doc, cx_m: float, cy_m: float, r_m: float, a0_rad: float, a1_rad: flo
                                        1)             # 1 = counter-clockwise
 
 
+def sw_slot(doc, cx_m: float, cy_m: float, ex_m: float, ey_m: float, width_m: float):
+    """A straight slot from its centre and the end of its half centreline (measured: the centre distance is twice
+    centre-to-end), centre-to-centre length type, without SolidWorks' own dimensions. It is a construction
+    centreline, two arcs and two lines; SolidWorks adds the relations that hold its shape (measured: with its
+    centre distance, end radius and position dimensioned it is fully defined)."""
+    return doc.SketchManager.CreateSketchSlot(1, 0, width_m, cx_m, cy_m, 0, ex_m, ey_m, 0, 0, 0, 0, 1, False)
+
+
 def sw_point(doc, x_m: float, y_m: float):
     return doc.SketchManager.CreatePoint(x_m, y_m, 0)
 

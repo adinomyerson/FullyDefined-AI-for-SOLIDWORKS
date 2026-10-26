@@ -285,3 +285,127 @@ def list_open_documents(ctx):
                for d in docs if d.get("unsaved_changes")]
     note = f"; unsaved changes: {', '.join(unsaved)}" if unsaved else ("; all saved" if docs else "")
     return ok(f"{len(docs)} document(s) open{note}", {"documents": docs})
+
+
+# ---------------------------------------------------------------- custom properties
+
+def _property_target(doc, configuration):
+    """(property manager, configuration name or "", how it was chosen), or a refusal."""
+    if configuration is None:
+        return sw.documents.sw_property_manager(doc, ""), "", "the file's own properties (default)"
+    if doc_type(doc) == 3:
+        raise ToolError("A drawing has no configurations: leave configuration out", Err.INPUT)
+    names = [str(n) for n in (value(doc, "GetConfigurationNames") or [])]
+    chosen = next((n for n in names if n.lower() == str(configuration).strip().lower()), None)
+    if chosen is None:
+        raise ToolError(f"No configuration '{configuration}'. Configurations: {', '.join(names) or 'none'}", Err.INPUT)
+    return sw.documents.sw_property_manager(doc, chosen), chosen, "given"
+
+
+def _property_rows(manager) -> list:
+    return [{"name": n, "value": v, "resolved": r, "type": sw.documents.PROPERTY_TYPES.get(k, str(k))}
+            for n, v, r, k in sw.documents.sw_properties(manager)]
+
+
+@tool(
+    group="core",
+    description="Set or delete custom properties of the active document (part, assembly or drawing): properties gives name -> text (a number is written as its text; the result says so), delete lists names to remove. They go on the file itself unless configuration names one of its configurations. A value can link to another property, e.g. '\"SW-Mass@Bracket.SLDPRT\"'. Every property touched is read back: value as typed and resolved value. Nothing changes if any input is refused.",
+    params={"properties": {"type": "object", "additionalProperties": {"type": ["string", "number"]},
+                           "description": "Name -> value to set, e.g. {\"PartNo\": \"BR-104\", \"Description\": \"Bracket\"}"},
+            "delete": {"type": "array", "items": {"type": "string"}, "description": "Names of properties to remove"},
+            "configuration": {"type": "string", "description": "A configuration of the part or assembly (default: the file's own properties)"}},
+    needs="any",
+)
+def set_custom_properties(ctx, properties=None, delete=None, configuration=None):
+    doc = ctx.doc
+    if not properties and not delete:
+        raise ToolError("Give properties to set, names to delete, or both", Err.INPUT)
+    if properties is not None and not isinstance(properties, dict):
+        raise ToolError("properties must be an object of name -> text", Err.INPUT)
+    if delete is not None and not isinstance(delete, list):
+        raise ToolError("delete must be a list of names", Err.INPUT)
+    wanted, as_text = {}, []
+    for name, text in (properties or {}).items():
+        if not str(name).strip():
+            raise ToolError("A property name is empty", Err.INPUT)
+        if isinstance(text, bool) or not isinstance(text, (str, int, float)):
+            raise ToolError(f"The value of {name} must be text or a number", Err.INPUT)
+        if not isinstance(text, str):
+            as_text.append(str(name).strip())
+        if str(name).strip().lower() in {n.lower() for n in wanted}:
+            raise ToolError(f"{str(name).strip()} is given twice (property names ignore case)", Err.INPUT)
+        wanted[str(name).strip()] = text if isinstance(text, str) else str(text)
+    gone = [str(n).strip() for n in (delete or [])]
+    if len({n.lower() for n in gone}) != len(gone):
+        raise ToolError("A name to delete is given twice (property names ignore case)", Err.INPUT)
+    if any(not n for n in gone):
+        raise ToolError("A name to delete is empty", Err.INPUT)
+    both = sorted({n.lower() for n in wanted} & {n.lower() for n in gone})
+    if both:
+        raise ToolError(f"Set and delete in one call: {', '.join(both)}", Err.INPUT)
+    manager, chosen, chosen_from = _property_target(doc, configuration)
+    existing = {n.lower(): (n, k) for n, _, _, k in sw.documents.sw_properties(manager)}
+    missing = [n for n in gone if n.lower() not in existing]
+    if missing:
+        raise ToolError(f"No property {', '.join(missing)} to delete. Properties: "
+                        f"{', '.join(n for n, _ in existing.values()) or 'none'}", Err.INPUT)
+    other_type = [existing[n.lower()][0] for n in wanted
+                  if n.lower() in existing and existing[n.lower()][1] not in (0, sw.documents.PROPERTY_TEXT)]
+    if other_type:
+        raise ToolError(f"{', '.join(other_type)} hold a value of another type than text: delete them first",
+                        Err.INPUT)
+
+    snapshot = {n.lower(): (n, typed, kind) for n, typed, _, kind in sw.documents.sw_properties(manager)}
+    failed = []
+    for name, text in wanted.items():
+        code = sw.documents.sw_set_property(manager, name, text)
+        if code:
+            failed.append(f"{name}: {sw.documents.ADD_RESULTS.get(code, code)}")
+    for name in gone:
+        code = sw.documents.sw_delete_property(manager, existing[name.lower()][0])
+        if code:
+            failed.append(f"{name}: {sw.documents.DELETE_RESULTS.get(code, code)}")
+    rows = _property_rows(manager)
+    now = {r["name"].lower(): r for r in rows}
+    failed += [f"{n}: reads back '{now[n.lower()]['value']}'" if n.lower() in now else f"{n}: missing after setting"
+               for n, text in wanted.items() if now.get(n.lower(), {}).get("value") != text]
+    failed += [f"{n}: still there after deleting" for n in gone if n.lower() in now]
+    if failed:
+        # put every touched property back as it was: nothing of a refused call stays
+        for key in [n.lower() for n in wanted] + [n.lower() for n in gone]:
+            if key in snapshot:
+                old_name, typed, kind = snapshot[key]
+                sw.documents.sw_set_property(manager, old_name, typed, kind)
+            elif key in now:
+                sw.documents.sw_delete_property(manager, now[key]["name"])
+        restored = {n.lower(): (n, typed, kind) for n, typed, _, kind in sw.documents.sw_properties(manager)} == snapshot
+        raise ToolError(f"SolidWorks did not take: {'; '.join(failed)}. "
+                        + ("Every property was put back as it was" if restored
+                           else "WARNING: the properties could not all be put back - check list_custom_properties"),
+                        Err.FEATURE)
+    data = {"configuration": chosen, "configuration_from": chosen_from,
+            "set": [now[n.lower()] for n in wanted], "deleted": gone, "count": len(rows)}
+    if as_text:
+        data["written_as_text"] = as_text
+    where = f"configuration {chosen}" if chosen else "the file"
+    parts = [f"{r['name']} = '{r.get('value')}'" + (f" (resolves to '{r['resolved']}')"
+             if r.get("resolved") != r.get("value") else "") for r in data["set"]]
+    message = f"On {where}: " + "; ".join(parts + ([f"deleted {', '.join(data['deleted'])}"] if gone else []))
+    if as_text:
+        message += f". Written as text: {', '.join(as_text)}"
+    return ok(message, data)
+
+
+@tool(
+    group="core",
+    description="List the custom properties of the active document: name, value as typed, resolved value (a linked value such as '\"SW-Mass@Bracket.SLDPRT\"' shows its result) and type. The file's own properties unless configuration names one of its configurations. Read-only.",
+    params={"configuration": {"type": "string", "description": "A configuration of the part or assembly (default: the file's own properties)"}},
+    needs="any",
+)
+def list_custom_properties(ctx, configuration=None):
+    manager, chosen, chosen_from = _property_target(ctx.doc, configuration)
+    rows = _property_rows(manager)
+    where = f"configuration {chosen}" if chosen else "the file"
+    listed = "; ".join(f"{r['name']} = '{r['resolved']}'" for r in rows)
+    return ok(f"{len(rows)} custom properties on {where}" + (f": {listed}" if rows else ""),
+              {"configuration": chosen, "configuration_from": chosen_from, "properties": rows, "count": len(rows)})

@@ -331,6 +331,101 @@ def draw_polygon(ctx, cx, cy, radius, sides, unit=None):
               f"construction circle (dimension that to resize the polygon)", data)
 
 
+def _slot_parts(doc, sketch, known, ends, width_m):
+    """Among the entities that are not in known (segment keys before the draw): the slot's centreline, arcs and
+    lines, by where they are, and every new entity: (centreline, [arcs], [lines], [new])."""
+    near = lambda p, q: math.hypot(p[0] - q[0], p[1] - q[1]) <= 1e-9      # noqa: E731
+    centreline, arcs, lines = None, [], []
+    new = [seg for seg in sk.segments(doc, sketch) if sk.segment_key(seg) not in known]
+    for seg in new:
+        try:
+            kind = int(value(seg, "GetType"))
+            if kind == 1:
+                c = value(seg, "GetCenterPoint2")
+                if any(near((c.X, c.Y), e) for e in ends) and abs(float(value(seg, "GetRadius")) - width_m / 2) <= 1e-9:
+                    arcs.append(seg)
+                continue
+            if kind != 0:
+                continue
+            a, b = value(seg, "GetStartPoint2"), value(seg, "GetEndPoint2")
+            pair = ((a.X, a.Y), (b.X, b.Y))
+            if bool(value(seg, "ConstructionGeometry")):
+                if {near(pair[0], ends[0]) and near(pair[1], ends[1]), near(pair[0], ends[1]) and near(pair[1], ends[0])} & {True}:
+                    centreline = seg
+            elif abs(math.hypot(pair[1][0] - pair[0][0], pair[1][1] - pair[0][1])
+                     - math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1])) <= 1e-9 \
+                    and all(abs(min(math.hypot(p[0] - e[0], p[1] - e[1]) for e in ends) - width_m / 2) <= 1e-9
+                            for p in pair):
+                lines.append(seg)
+        except Exception as e:
+            logger.debug(f"Slot part not read: {e}")
+    return centreline, arcs, lines, new
+
+
+@tool(
+    group="sketch",
+    description="Add a straight slot to the open sketch: two half circles joined by two lines, around a construction centreline. x, y is the slot's centre, centre_distance the distance between the two arc centres, width the slot's width (twice the end radius), angle its direction from +X (0 = horizontal, the default; the result says so). At 0 or 90 degrees it is horizontal or vertical by a relation; centred on the origin it is tied there. In a part its centre distance and end radius (width / 2) become dimensions when the sketch is closed, unless set first: a slot on the origin at 0 or 90 degrees is then fully defined. At any other angle the angle stays free: dimension it from a reference line. Returns the ids of its entities.",
+    params={'x': {'type': 'number', 'description': "X of the slot's centre"},
+     'y': {'type': 'number', 'description': "Y of the slot's centre"},
+     'centre_distance': {'type': 'number', 'description': "Distance between the centres of the two end arcs"},
+     'width': {'type': 'number', 'description': "Width of the slot"},
+     'angle': {'type': 'number', 'description': "Direction of the slot, degrees from +X (default 0)"},
+     'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'}},
+    required=['x', 'y', 'centre_distance', 'width'],
+    needs='any',
+)
+def draw_slot(ctx, x, y, centre_distance, width, angle=None, unit=None):
+    doc, sketch = _draw(ctx)
+    try:
+        degrees = 0.0 if angle is None else float(angle)
+    except (TypeError, ValueError):
+        raise ToolError("angle must be a number of degrees", Err.INPUT)
+    if not math.isfinite(degrees):
+        raise ToolError("angle must be a number of degrees", Err.INPUT)
+    cx_m, cy_m = ctx.to_m(x, unit), ctx.to_m(y, unit)
+    length_m = units.size_m(centre_distance, unit, "centre_distance")
+    width_m = units.size_m(width, unit, "width")
+    turn = math.radians(degrees)
+    dx, dy = math.cos(turn) * length_m / 2, math.sin(turn) * length_m / 2
+    ends = [(cx_m - dx, cy_m - dy), (cx_m + dx, cy_m + dy)]
+    reach = length_m / 2 + width_m / 2
+    sk.check_input(points=[(cx_m - reach, cy_m - reach), (cx_m + reach, cy_m + reach)],
+                   sizes=[("centre_distance", length_m), ("width", width_m)])
+    known = {sk.segment_key(seg) for seg in sk.segments(doc, sketch)}
+    before = len(known)
+    with sk.exact_input(doc):
+        slot = sw.sketch_draw.sw_slot(doc, cx_m, cy_m, ends[1][0], ends[1][1], width_m)
+    centreline, arcs, lines, new = _slot_parts(doc, sketch, known, ends, width_m)
+    if slot is None or centreline is None or len(arcs) != 2 or len(lines) != 2 or len(new) != 5:
+        sw.sketch_draw.sw_delete_entities(doc, new)         # a refusal leaves the sketch as it was
+        sw.common.sw_clear_selection(doc)
+        sk.segments(doc, sketch)
+        raise ToolError("SolidWorks could not draw that slot", Err.SKETCH)
+
+    unit_str = units.label(unit)
+    data = {"centre_distance": centre_distance, "width": width, "angle": degrees + 0.0, "unit": unit_str,
+            "angle_from": "given" if angle is not None else "default (0)"}
+    note = sk.new_entity_ids(doc, sketch, before, data, created=[centreline] + arcs + lines)
+    square = abs(math.remainder(degrees, 90.0)) < 1e-9
+    if not square:
+        data["angle_free"] = True
+        note += "; its angle is free: dimension it from a reference line"
+    if cx_m == 0 and cy_m == 0 and doc_type(doc) == 1:
+        data["tied_to_origin"] = "centre"           # SolidWorks ties a slot's centre point drawn at 0, 0 to the origin
+        note += ORIGIN_NOTE + " (its centre)"
+    elif sk.tie_to_origin(doc, sketch, arcs, drawn=ends):
+        data["tied_to_origin"] = "arc centre"
+        note += ORIGIN_NOTE + " (an arc centre)"
+    gap_x, gap_y = -math.sin(turn) * (width_m / 2 + TEXT_GAP_M), math.cos(turn) * (width_m / 2 + TEXT_GAP_M)
+    arc_text = (ends[1][0] + math.cos(turn) * (width_m / 2 + TEXT_GAP_M),
+                ends[1][1] + math.sin(turn) * (width_m / 2 + TEXT_GAP_M))
+    end_arc = next(a for a in arcs if math.hypot(value(a, "GetCenterPoint2").X - ends[1][0],
+                                                 value(a, "GetCenterPoint2").Y - ends[1][1]) <= 1e-9)
+    note += _size_later(ctx, doc, sketch, [(centreline, cx_m + gap_x, cy_m + gap_y), (end_arc, *arc_text)], data)
+    angle_text = f" at {degrees:g} deg" + (" (default)" if angle is None else "")
+    return ok(f"Slot: centre distance {centre_distance}{unit_str}, width {width}{unit_str}{angle_text}{note}", data)
+
+
 @tool(
     group="sketch",
     description="Add a sketch point at x, y in the open sketch. A point is reference geometry: an extrude ignores it. In an assembly it can be mated to or measured from; list_component_sketches gives its id. list_sketch_entities shows such points under 'points'.",

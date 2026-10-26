@@ -1,6 +1,7 @@
 """Opening and closing sketches, and the planes they sit on."""
 
 import logging
+import math
 
 from ..core.api import Err, geometry, doc_type, model, ok, plane_feature_name, sketch as sk, sw, tool, ToolError, units, value
 

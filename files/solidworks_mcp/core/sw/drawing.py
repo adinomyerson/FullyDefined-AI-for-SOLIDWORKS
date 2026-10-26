@@ -81,6 +81,20 @@ def sw_set_annotation_color(display, colorref: int) -> None:
     value(display, "GetAnnotation").Color = int(colorref)
 
 
+def sw_precision(display) -> tuple:
+    """(decimals of the value, decimals of its tolerance) a dimension shows; -1 = the document's setting."""
+    return int(value(display, "GetPrimaryPrecision2")), int(value(display, "GetPrimaryTolPrecision2"))
+
+
+def sw_set_precision(display, decimals: int, tolerance_decimals: int) -> None:
+    """Decimals of the value and its tolerance; the dual-unit ones are left as they are. The tool reads them back."""
+    try:
+        dual, dual_tol = int(value(display, "GetAlternatePrecision2")), int(value(display, "GetAlternateTolPrecision2"))
+        display.SetPrecision3(decimals, dual, tolerance_decimals, dual_tol)
+    except Exception as e:
+        logger.debug(f"SetPrecision3: {e}")
+
+
 def sw_remove_alignment(view) -> None:
     view.RemoveAlignment()
 
@@ -115,6 +129,127 @@ def sw_insert_bom(view, x: float, y: float, bom_type: int, configuration: str):
     except Exception as e:
         logger.debug(f"InsertBomTable4: {e}")
         return None
+
+
+PART_NUMBER_COLUMN = 201         # swBomTableColumnType_PartNumber
+
+
+def sw_bom_column_property(table, column: int) -> str:
+    """The custom property a BOM column shows ('' for another kind of column). Measured: a column given a property
+    keeps column type 0, so the property itself is read, not the type."""
+    try:
+        return str(table.GetColumnCustomProperty(column) or "")
+    except Exception as e:
+        logger.debug(f"BOM column {column}: {e}")
+        return ""
+
+
+def sw_part_number_column(table):
+    """The index of the BOM's part number column, or None."""
+    try:
+        return next((c for c in range(int(table.ColumnCount))
+                     if int(table.GetColumnType2(c, False)) == PART_NUMBER_COLUMN), None)
+    except Exception as e:
+        logger.debug(f"BOM part number column: {e}")
+        return None
+
+
+def sw_delete_column(table, column: int) -> None:
+    try:
+        table.DeleteColumn(column)
+    except Exception as e:
+        logger.debug(f"Could not delete column {column}: {e}")
+
+
+def sw_add_bom_column(table, prop: str, title: str):
+    """A new last column showing a custom property of each row's component; its index, or None."""
+    last = int(table.ColumnCount) - 1
+    try:
+        if not table.InsertColumn2(4, last, title, 1):        # swTableItemInsertPosition_Last, single line tight
+            return None
+        column = int(table.ColumnCount) - 1
+        if not table.SetColumnCustomProperty(column, prop):
+            return None
+        table.SetColumnTitle2(column, title, False)
+        return column
+    except Exception as e:
+        logger.debug(f"BOM column {prop}: {e}")
+        return None
+
+
+CENTER_MARK_ANNOTATION = 13      # swAnnotationType_e: swCenterMarkSym
+
+
+def _method(obj, name: str, *args):
+    """A method call by dispatch id. Measured: drawing.InsertCenterLine2() through pywin32's late binding gives
+    'Member not found'; invoked as a method by its id it works."""
+    dispid = obj._oleobj_.GetIDsOfNames(name)
+    return obj._oleobj_.Invoke(dispid, 0, pythoncom.DISPATCH_METHOD, True, *args)
+
+
+def sw_center_mark_points(view) -> list:
+    """(x, y) of every centre mark in a view, in the view's own sketch coordinates (m), one per mark of a group.
+    Measured: the view's GetCenterMarks / GetCenterMarkCount give nothing; its annotations do."""
+    points = []
+    for note in (value(view, "GetAnnotations") or []):
+        try:
+            if int(value(note, "GetType")) != CENTER_MARK_ANNOTATION:
+                continue
+            mark = value(note, "GetSpecificAnnotation")
+            for i in range(max(int(value(mark, "GroupCount")), 1)):
+                if bool(mark.IsDeleted(i)):
+                    continue
+                p = [float(v) for v in mark.GetPosition(i)]
+                points.append((p[0], p[1]))
+        except Exception as e:
+            logger.debug(f"Centre mark: {e}")
+    return points
+
+
+def sw_circle_axis(edge):
+    """The axis of a circular edge in its part's coordinates, or None."""
+    try:
+        return [float(v) for v in value(value(edge, "GetCurve"), "CircleParams")][3:6]
+    except Exception as e:
+        logger.debug(f"Circle axis: {e}")
+        return None
+
+
+def sw_center_mark(drawing, view, edge) -> bool:
+    """A single centre mark on a round edge of the view, sized by the drafting standard; True when made."""
+    sw_clear_selection(drawing)
+    try:
+        drawing.ActivateView(str(view.Name))
+        made = bool(view.SelectEntity(edge, False)) and drawing.InsertCenterMark3(2, False, False) is not None
+    except Exception as e:
+        logger.debug(f"InsertCenterMark3: {e}")
+        made = False
+    sw_clear_selection(drawing)
+    return made
+
+
+def sw_centerline_count(view) -> int:
+    """How many centrelines a view has. A centreline gives no ends or position through the API (its annotation's
+    position is None), only what it is attached to."""
+    return len(value(view, "GetCenterLines") or [])
+
+
+def sw_auto_centerlines(drawing, view) -> bool:
+    """Centrelines on the view's cylinders seen from the side: InsertCenterLine2 with the view selected. False
+    when the view could not be selected or the call failed (not the same as nothing to put a centreline on)."""
+    sw_clear_selection(drawing)
+    called = False
+    try:
+        # measured: on a view whose edges nothing has read since it was made, the command finds nothing
+        drawing.ActivateView(str(view.Name))
+        view.GetVisibleEntities2(null_object(), 1)
+        if drawing.Extension.SelectByID2(str(view.Name), "DRAWINGVIEW", 0, 0, 0, False, 0, null_object(), 0):
+            _method(drawing, "InsertCenterLine2")
+            called = True
+    except Exception as e:
+        logger.debug(f"InsertCenterLine2: {e}")
+    sw_clear_selection(drawing)
+    return called
 
 
 def sw_auto_balloons(drawing, view, layout: int) -> bool:
