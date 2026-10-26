@@ -2,7 +2,6 @@
 title: Help
 ---
 
-[Home](index.md) · [Install](install.md) · [Examples](examples.md) · [What it can do](tools.md) · **Help**
 
 ## Something does not work
 
@@ -59,7 +58,7 @@ where.
 
 ## Licence
 
-MIT License, Copyright (c) 2026 Adino Myerson.
+MIT licence: see [LICENSE](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/blob/main/LICENSE).
 
 SOLIDWORKS is a registered trademark of Dassault Systèmes SolidWorks Corporation. This project is not affiliated
 with or endorsed by Dassault Systèmes or Anthropic.

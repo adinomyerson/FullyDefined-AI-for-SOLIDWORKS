@@ -2,7 +2,6 @@
 title: Examples
 ---
 
-[Home](index.md) · [Install](install.md) · **Examples** · [What it can do](tools.md) · [Help](help.md)
 
 Start SOLIDWORKS, open a new chat in your AI app and ask in your own words. The assistant asks once at the start
 for anything missing (a size, a material), then builds everything and reports what it measured. Lengths are in mm

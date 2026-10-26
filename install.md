@@ -2,11 +2,20 @@
 title: Install
 ---
 
-[Home](index.md) · **Install** · [Examples](examples.md) · [What it can do](tools.md) · [Help](help.md)
 
 You need Windows 10 or 11, SOLIDWORKS 2026 (installed, licensed and set to English) and an AI app that runs
-local MCP servers. Nothing else: the installer brings its own Python and changes nothing else on your computer.
-No administrator rights are needed.
+local MCP servers. Nothing else: the installer brings its own Python, installs into your user folder and adds FullyDefined to the AI
+apps you tick. No administrator rights are needed.
+
+
+## Works with
+
+<ul class="apps">
+  <li><span class="tag tested">Tested</span><span>Claude Desktop and Claude Code, with the Claude Opus and Claude Sonnet models.</span></li>
+  <li><span class="tag">Installed and used</span><span>Antigravity.</span></li>
+  <li><span class="tag">Should work</span><span>Gemini CLI and other apps that run local MCP servers. Please report how it goes.</span></li>
+  <li><span class="tag">Note</span><span>Cursor gives the model only about 40 tools, fewer than building a part needs.</span></li>
+</ul>
 
 ## 1. Download
 

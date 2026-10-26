@@ -2,7 +2,6 @@
 title: What it can do
 ---
 
-[Home](index.md) · [Install](install.md) · [Examples](examples.md) · **What it can do** · [Help](help.md)
 
 121 tools, in tool groups. You never call them yourself: you ask in plain language and the assistant picks the tools. Every group except the always-on ones can be switched off in your settings (see [Help](help.md#settings)).
 

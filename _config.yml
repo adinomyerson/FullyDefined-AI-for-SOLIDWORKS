@@ -1,6 +1,10 @@
 title: FullyDefined – AI for SOLIDWORKS
 description: Let your AI app build and check SOLIDWORKS parts, assemblies and drawings.
-theme: jekyll-theme-cayman
 lang: en
 exclude:
   - README.md
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

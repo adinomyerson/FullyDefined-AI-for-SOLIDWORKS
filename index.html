@@ -1,0 +1,124 @@
+---
+title: FullyDefined – AI for SOLIDWORKS
+home: true
+---
+<section class="hero">
+  <div class="wrap">
+    <h1>Let your AI app build and check SOLIDWORKS parts, assemblies and drawings.</h1>
+    <p class="sub">Describe a part in plain language. Your AI app builds it in SOLIDWORKS on your own computer, with
+      real features and fully defined sketches, and measures every result.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS">View on GitHub</a>
+    </div>
+    <p class="proof">Tested with <strong>Claude Desktop</strong> and <strong>Claude Code</strong>; also used with
+      <strong>Antigravity</strong>. Free and open source.</p>
+
+    <div class="build" role="group" aria-label="A real build: the request and the part it made">
+      <div class="chat">
+        <div class="bubble you"><span class="who">You</span>Make me a motor mount plate in SOLIDWORKS: 120 x 80 mm, 8 mm thick, aluminium 6061. A 22 mm bore in the centre for the shaft, four M4 clearance holes (4.5 mm) on a 31 mm square around it for the motor, and four 6.6 mm mounting holes 10 mm in from each corner. Round the four outer corners with 8 mm fillets. Save it as motor_plate.SLDPRT and tell me what you measured.</div>
+        <div class="bubble ai"><span class="who">Claude Code (Claude Opus), using FullyDefined</span>The motor plate is built and saved. SolidWorks shows it with no unsaved changes, and every measurement matches what you asked for.<ul><li>Plate 120.0 × 80.0 × 8.0 mm</li><li>Volume 71,715.7 mm³, mass 193.6 g</li></ul><a href="#report">Full report below</a></div>
+      </div>
+      <figure class="model">
+        <img src="images/motor_plate.png" width="1200" height="900" alt="The motor mount plate the AI built in SOLIDWORKS, shaded with edges">
+        <figcaption>The saved part, as built in SOLIDWORKS.</figcaption>
+      </figure>
+    </div>
+    <p class="real-label">A real build: the request as typed (its save folder left out), an excerpt of the real reply, and the saved part.</p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h2>From a sentence to a saved, measured part.</h2>
+    <p class="lead">FullyDefined is an MCP server: it gives your AI app the tools to drive SOLIDWORKS.</p>
+    <div class="grid3">
+      <div class="card"><span class="step-n">1</span><h3>You describe it</h3>
+        <p>Sizes, holes, material, in your own words. The AI is guided to ask once, at the start, for anything missing.</p></div>
+      <div class="card"><span class="step-n">2</span><h3>The AI builds it in SOLIDWORKS</h3>
+        <p>Sketches, extrudes, cuts, Hole Wizard holes, fillets, patterns: real features in your own SOLIDWORKS.</p></div>
+      <div class="card"><span class="step-n">3</span><h3>Every result is measured</h3>
+        <p>The tools read volume, size, positions and sketch status back from the model, to report against what you asked.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <p class="eyebrow">What you get</p>
+    <h2>Real CAD you can keep working on.</h2>
+    <div class="grid3">
+      <div class="card"><h3>Real, editable SOLIDWORKS features</h3>
+        <p>A feature tree you would have built yourself: change a dimension later and the model follows.</p></div>
+      <div class="card"><h3>Sketches fully defined from your references</h3>
+        <p>Dimensioned and related from the sizes and edges you named, the way an engineer would build them.</p></div>
+      <div class="card"><h3>Nothing comes back unmeasured</h3>
+        <p>The tools answer with numbers measured from the model, so a wrong result shows instead of hiding.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <p class="eyebrow">The report</p>
+    <h2>What the AI reported for the part above.</h2>
+    <p class="lead">Its build report, as measured from the saved model; the features and sketch status read back from the same file.</p>
+    <div class="report" id="report">
+      <div class="report-head"><span>motor_plate.SLDPRT</span><span class="ok">Every number matches the request</span></div>
+      <table>
+        <caption class="sr-only">The build report of the motor mount plate</caption>
+        <tr><th>Plate size</th><td>120.0 × 80.0 × 8.0 mm (asked: 120 × 80 × 8)</td></tr>
+        <tr><th>Shaft bore</th><td>Ø22.0 at (0, 0) (asked: Ø22, centred)</td></tr>
+        <tr><th>Motor holes</th><td>4 × Ø4.5 at (±15.5, ±15.5): 31 mm square</td></tr>
+        <tr><th>Mounting holes</th><td>4 × Ø6.6 at (±50, ±30): 10.0 mm from both edges</td></tr>
+        <tr><th>Corner fillets</th><td>4 × R8.0</td></tr>
+        <tr><th>Material</th><td>6061 Alloy, 2700 kg/m³</td></tr>
+        <tr><th>Volume</th><td>71,715.7 mm³</td></tr>
+        <tr><th>Mass</th><td>193.6 g</td></tr>
+        <tr><th>Features</th><td>Sketch, extrude, 6 Hole Wizard features (9 holes), fillet</td></tr>
+        <tr><th>Sketches</th><td><span class="tick">✓</span> every sketch fully defined</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <p class="eyebrow">Works with</p>
+    <h2>Your AI app, your SOLIDWORKS.</h2>
+    <ul class="apps">
+      <li><span class="tag tested">Tested</span><span>Claude Desktop and Claude Code, with the Claude Opus and Claude Sonnet models.</span></li>
+      <li><span class="tag">Installed and used</span><span>Antigravity.</span></li>
+      <li><span class="tag">Should work</span><span>Gemini CLI and other apps that run local MCP servers. Please report how it goes.</span></li>
+      <li><span class="tag">Note</span><span>Cursor gives the model only about 40 tools, fewer than building a part needs.</span></li>
+    </ul>
+  </div>
+</section>
+<section class="block">
+  <div class="wrap grid2">
+    <div>
+      <p class="eyebrow">Your data</p>
+      <h2>Runs on your own PC.</h2>
+      <p class="lead">FullyDefined runs on your computer, next to SOLIDWORKS. It sends nothing anywhere itself and has
+        no telemetry: it only answers your AI app.</p>
+      <p class="lead">What your AI provider sees is what your AI app sends it: your messages and the tools' answers,
+        such as feature names, sizes, file paths and measurements (and a picture of the model, when one is asked
+        for). Settings and a log stay on your PC, in <code>%APPDATA%\solidworks-mcp</code>.</p>
+    </div>
+    <div>
+      <p class="eyebrow">Questions</p>
+      <h2>FAQ</h2>
+      <details><summary>Windows warns about the installer. Is that expected?</summary>
+        <p>Yes. The installer is not code-signed, so Windows SmartScreen shows "Windows protected your PC". Click
+          <strong>More info</strong>, then <strong>Run anyway</strong>. <a href="install.html">Install</a> shows it.</p></details>
+      <details><summary>Which SOLIDWORKS versions does it work with?</summary>
+        <p>It is tested on SOLIDWORKS 2026, set to English. Other versions are not tested.</p></details>
+      <details><summary>Is it free?</summary>
+        <p>Yes: free and open source under the MIT licence. You need your own SOLIDWORKS licence and an AI app.</p></details>
+      <details><summary>What data goes to the AI?</summary>
+        <p>Your messages and the tools' answers, through your AI app and under its terms. FullyDefined itself sends
+          nothing anywhere.</p></details>
+    </div>
+  </div>
+</section>
