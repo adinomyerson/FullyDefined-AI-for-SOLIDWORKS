@@ -241,3 +241,6 @@ a:focus-visible, summary:focus-visible, .btn:focus-visible { outline: 2px solid 
   :root:not([data-theme="light"]) .theme-toggle .moon { display: block; }
 }
 @media (max-width: 760px) { .theme-toggle { position: absolute; right: 20px; top: 10px; } .topbar .wrap { position: relative; } }
+.examples { align-items: start; }
+.example .pair { grid-template-columns: 1fr; justify-items: stretch; }
+.example .pair .arrow { justify-self: center; transform: rotate(90deg); line-height: 1; }

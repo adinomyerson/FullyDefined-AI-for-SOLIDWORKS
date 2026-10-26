@@ -1,0 +1,76 @@
+---
+title: Examples
+wide: true
+---
+
+<p class="lead">Real conversations: a rough request, the AI's plan, a short answer, and the part it built and measured.
+The AI's words are shortened (…), never changed.</p>
+
+<div class="examples">
+  <div class="example">
+    <p class="kind">A part</p>
+    <div class="bubble you"><span class="who">You</span>make me a plate for a nema 17 motor</div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>Before I build it, here's a plan with
+      suggested sizes. …<ul><li>Motor mounting holes: 4 × Ø3.4 mm through-holes for M3 screws, on a 31 mm square
+      pattern …</li><li>Centre bore: Ø22.5 mm through …</li><li>Flat square plate, 70 × 70 × 5 mm …</li><li>Material:
+      6061 aluminium</li><li>Corner fillets: R5 mm …</li><li>Holes to fix the plate to your frame: 4 × Ø5.5 mm for M5
+      screws, 8 mm in from each edge …</li></ul>Are the sizes and material above OK, or should I change any?</div>
+    <div class="bubble you"><span class="who">You</span>flat is fine, plain holes. looks good but make it 6mm thick</div>
+    <div class="shot"><img src="images/examples/plate.png" width="1200" height="900" alt="The NEMA 17 motor plate the AI built" loading="lazy"></div>
+    <p class="result"><span class="tick">✓</span>Measured: 70.0 × 70.0 × 6.0 mm, 6061 aluminium, 70.5 g; every sketch fully defined.</p>
+  </div>
+
+  <div class="example">
+    <p class="kind">A turned part</p>
+    <div class="bubble you"><span class="who">You</span>i need a shaft with a keyway</div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>Before I build anything, here's a
+      suggested plan. …<ul><li>Diameter: Ø20 mm</li><li>Length: 100 mm</li><li>End chamfers: 1 × 45° on both
+      ends</li><li>Material: AISI 1045 steel</li><li>Key size: 6 × 6 mm, so the keyway is 6 mm wide</li><li>Depth in
+      shaft: 3.5 mm …</li></ul>Are these sizes right, or do you have a shaft diameter and length in mind? If the
+      diameter changes, I'll resize the key to the standard for it.</div>
+    <div class="bubble you"><span class="who">You</span>25mm dia, 120 long, rest is fine</div>
+    <div class="shot"><img src="images/examples/shaft.png" width="1200" height="900" alt="The keyed shaft the AI built" loading="lazy"></div>
+    <p class="result"><span class="tick">✓</span>Measured: Ø25.0 × 120.0 mm, the keyway resized to the standard 8 × 4 mm, 456 g.</p>
+  </div>
+
+  <div class="example">
+    <p class="kind">Sheet metal</p>
+    <div class="bubble you"><span class="who">You</span>bracket from sheet metal to hold a sensor</div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>The size of the bracket depends on the
+      sensor, so here's a plan with suggested values. …<ul><li><b>Sensor</b> M18 cylindrical proximity sensor …</li>
+      <li><b>Material</b> Aluminium 5052-H32, 1.5 mm sheet</li><li><b>Width</b> 40 mm …</li><li><b>Upright leg</b> 50 mm
+      tall …</li><li><b>Sensor hole</b> Ø18.5 mm through hole …</li></ul>Which sensor is it?</div>
+    <div class="bubble you"><span class="who">You</span>its an M12 prox sensor. L is fine, rest ok, no drawing</div>
+    <div class="shot"><img src="images/examples/bracket.png" width="1200" height="900" alt="The sheet metal sensor bracket the AI built" loading="lazy"></div>
+    <p class="result"><span class="tick">✓</span>Measured: 40 × 50 × 40 mm, a Ø12.5 hole for the M12, flat blank 87.4 × 40 mm, 13.4 g.</p>
+  </div>
+
+  <div class="example">
+    <p class="kind">An assembly</p>
+    <div class="bubble you"><span class="who">You</span>can you make an assembly, a base plate with 4 standoffs on it</div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>Before I build it, here's my proposed
+      plan. Every size below is a suggestion …<ul><li>100 × 80 × 5 mm rectangular plate …</li><li>4 × Ø3.4 mm through
+      holes (M3 clearance), one near each corner …</li><li>Round standoff, Ø6 mm outer, 20 mm tall …</li><li>Material:
+      brass …</li></ul>Round or hex standoffs?</div>
+    <div class="bubble you"><span class="who">You</span>go, but hex standoffs pls</div>
+    <div class="shot"><img src="images/examples/standoffs.png" width="1200" height="900" alt="The base plate with four hex standoffs" loading="lazy"></div>
+    <p class="result"><span class="tick">✓</span>Measured: plate and 4 brass hex standoffs, 8 mates without errors, no interference, 122.0 g.</p>
+  </div>
+
+  <div class="example">
+    <p class="kind">From a drawing</p>
+    <div class="bubble you"><span class="who">You</span>can you build this?</div>
+    <div class="pair"><img class="drawing" src="images/examples/plate_drawing.png" width="2000" height="1415" alt="An engineering drawing of a motor plate" loading="lazy"><span class="arrow">→</span><img src="images/examples/from_plate.png" width="1200" height="900" alt="The plate built from the drawing" loading="lazy"></div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>I built the motor plate from your drawing
+      … I measured the finished part against the drawing and everything matches</div>
+    <p class="result"><span class="tick">✓</span>Measured: 71,715.7 mm³, the same volume as the part the drawing was made from.</p>
+  </div>
+
+  <div class="example">
+    <p class="kind">From a drawing</p>
+    <div class="bubble you"><span class="who">You</span>can you build this?</div>
+    <div class="pair"><img class="drawing" src="images/examples/shaft_drawing.png" width="2000" height="1415" alt="An engineering drawing of a keyed shaft" loading="lazy"><span class="arrow">→</span><img src="images/examples/from_shaft.png" width="1200" height="900" alt="The shaft built from the drawing" loading="lazy"></div>
+    <div class="bubble ai"><span class="who">Claude Code (Claude Opus)</span>I built the shaft from your drawing …</div>
+    <p class="result"><span class="tick">✓</span>Measured: 58,121.1 mm³, the same volume as the shaft the drawing was made from.</p>
+  </div>
+</div>

@@ -16,15 +16,44 @@ home: true
 
     <div class="build" role="group" aria-label="A real build: the request and the part it made">
       <div class="chat">
-        <div class="bubble you"><span class="who">You</span>Make me a motor mount plate in SOLIDWORKS: 120 x 80 mm, 8 mm thick, aluminium 6061. A 22 mm bore in the centre for the shaft, four M4 clearance holes (4.5 mm) on a 31 mm square around it for the motor, and four 6.6 mm mounting holes 10 mm in from each corner. Round the four outer corners with 8 mm fillets. Save it as motor_plate.SLDPRT and tell me what you measured.</div>
-        <div class="bubble ai"><span class="who">Claude Code (Claude Opus), using FullyDefined</span>The motor plate is built and saved. SolidWorks shows it with no unsaved changes, and every measurement matches what you asked for.<ul><li>Plate 120.0 × 80.0 × 8.0 mm</li><li>Volume 71,715.7 mm³, mass 193.6 g</li></ul><a href="#report">Full report below</a></div>
+        <div class="bubble you"><span class="who">You</span>make me a plate for a nema 17 motor</div>
+        <div class="bubble ai"><span class="who">Claude Code (Claude Opus), using FullyDefined</span>Before I build it, here's a plan with suggested sizes. … Flat square plate, 70 × 70 × 5 mm … Material: 6061 aluminium … Are the sizes and material above OK, or should I change any?</div>
+        <div class="bubble you"><span class="who">You</span>flat is fine, plain holes. looks good but make it 6mm thick</div>
+        <div class="bubble ai"><span class="who">Claude Code (Claude Opus), using FullyDefined</span>The NEMA 17 plate is built and saved … I measured the finished part and every feature matches the plan <a href="#report">Full report below</a></div>
       </div>
       <figure class="model">
-        <img src="images/motor_plate.png" width="1200" height="900" alt="The motor mount plate the AI built in SOLIDWORKS, shaded with edges">
+        <img src="images/examples/plate.png" width="1200" height="900" alt="The NEMA 17 motor plate the AI built in SOLIDWORKS, shaded with edges">
         <figcaption>The saved part, as built in SOLIDWORKS.</figcaption>
       </figure>
     </div>
-    <p class="real-label">A real build: the request as typed (its save folder left out), an excerpt of the real reply, and the saved part.</p>
+    <p class="real-label">A real conversation: your side as typed, the AI's words shortened (…) but never changed, and the saved part.</p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <p class="eyebrow">Two ways in</p>
+    <h2>Describe it, or hand over a drawing.</h2>
+    <div class="ways">
+      <div class="way">
+        <h3>Describe it</h3>
+        <p>Say what you need in your own words. The AI suggests a complete plan, you say yes, it builds.</p>
+        <div class="visual">
+          <div class="bubble you"><span class="who">You</span>make me a plate for a nema 17 motor</div>
+          <span class="arrow">→</span>
+          <img src="images/examples/plate.png" alt="The plate the AI built" loading="lazy">
+        </div>
+      </div>
+      <div class="way">
+        <h3>From a drawing</h3>
+        <p>Give your AI app a picture or PDF of an engineering drawing. It builds the part from it.</p>
+        <div class="visual">
+          <img class="drawing" src="images/examples/plate_drawing.png" alt="An engineering drawing of the plate" loading="lazy">
+          <span class="arrow">→</span>
+          <img src="images/examples/from_plate.png" alt="The part built from the drawing" loading="lazy">
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -63,20 +92,18 @@ home: true
   <div class="wrap">
     <p class="eyebrow">The report</p>
     <h2>What the AI reported for the part above.</h2>
-    <p class="lead">Its build report, as measured from the saved model; the features and sketch status read back from the same file.</p>
+    <p class="lead">Its report on the finished part, measured from the saved model; the volume and sketch status read back from the same file.</p>
     <div class="report" id="report">
-      <div class="report-head"><span>motor_plate.SLDPRT</span><span class="ok">Every number matches the request</span></div>
+      <div class="report-head"><span>NEMA17_Plate.SLDPRT</span><span class="ok">Every feature matches the plan</span></div>
       <table>
-        <caption class="sr-only">The build report of the motor mount plate</caption>
-        <tr><th>Plate size</th><td>120.0 × 80.0 × 8.0 mm (asked: 120 × 80 × 8)</td></tr>
-        <tr><th>Shaft bore</th><td>Ø22.0 at (0, 0) (asked: Ø22, centred)</td></tr>
-        <tr><th>Motor holes</th><td>4 × Ø4.5 at (±15.5, ±15.5): 31 mm square</td></tr>
-        <tr><th>Mounting holes</th><td>4 × Ø6.6 at (±50, ±30): 10.0 mm from both edges</td></tr>
-        <tr><th>Corner fillets</th><td>4 × R8.0</td></tr>
-        <tr><th>Material</th><td>6061 Alloy, 2700 kg/m³</td></tr>
-        <tr><th>Volume</th><td>71,715.7 mm³</td></tr>
-        <tr><th>Mass</th><td>193.6 g</td></tr>
-        <tr><th>Features</th><td>Sketch, extrude, 6 Hole Wizard features (9 holes), fillet</td></tr>
+        <caption class="sr-only">The build report of the NEMA 17 motor plate</caption>
+        <tr><th>Plate</th><td>70.0 × 70.0 × 6.0 mm (planned 70 × 70 × 6 mm)</td></tr>
+        <tr><th>Centre bore</th><td>Ø22.5 (r 11.25), centred on the origin</td></tr>
+        <tr><th>Motor holes</th><td>4 × Ø3.4, centres at ±15.5 mm</td></tr>
+        <tr><th>Plate mounting holes</th><td>4 × Ø5.5, centres at ±27 mm (8.0 mm from each edge)</td></tr>
+        <tr><th>Corner fillets</th><td>R5 on all 4 corners</td></tr>
+        <tr><th>Material</th><td>6061 Alloy, 70.5 g</td></tr>
+        <tr><th>Volume</th><td>26,097.5 mm³</td></tr>
         <tr><th>Sketches</th><td><span class="tick">✓</span> every sketch fully defined</td></tr>
       </table>
     </div>
