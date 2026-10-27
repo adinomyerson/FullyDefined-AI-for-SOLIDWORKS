@@ -12,13 +12,31 @@ logger = logging.getLogger(__name__)
 CORNERS = {"miter": 1, "butt1": 2, "butt2": 3, "none": 0}         # swSolidworksWeldmentEndCondOptions_e
 
 
-def _profile_root():
+def _library_years(app=None) -> list:
+    """The SOLIDWORKS <year> data folders to look in: the running version's first (RevisionNumber 34.x = 2026), then
+    every other installed one, newest first. Older versions keep their libraries in their own year's folder."""
+    base = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "SOLIDWORKS")
+    try:
+        years = sorted((n[11:] for n in os.listdir(base) if n.startswith("SOLIDWORKS 20") and n[11:].isdigit()),
+                       reverse=True)
+    except OSError:
+        years = []
+    try:
+        running = str(1992 + int(str(value(app, "RevisionNumber")).split(".")[0])) if app is not None else None
+    except Exception:
+        running = None
+    if running in years:
+        years.remove(running)
+        years.insert(0, running)
+    return [os.path.join(base, f"SOLIDWORKS {y}") for y in years]
+
+
+def _profile_root(app=None):
     """The installed weldment profile folder, or None."""
-    for base in (os.environ.get("ProgramData", r"C:\ProgramData"),):
-        for year in ("2026", "2025", "2024"):
-            folder = os.path.join(base, "SOLIDWORKS", f"SOLIDWORKS {year}", "weldment profiles")
-            if os.path.isdir(folder):
-                return folder
+    for folder in _library_years(app):
+        folder = os.path.join(folder, "weldment profiles")
+        if os.path.isdir(folder):
+            return folder
     return None
 
 
@@ -56,7 +74,7 @@ def structural_member(ctx, sketch, type, size, standard, corner="miter"):
     corner_key = str(corner or "miter").strip().lower()
     if corner_key not in CORNERS:
         raise ToolError(f"corner must be one of: {', '.join(CORNERS)}", Err.INPUT)
-    root = _profile_root()
+    root = _profile_root(ctx.app)
     if root is None:
         raise ToolError("No weldment profile library is installed (ProgramData\\SOLIDWORKS\\SOLIDWORKS 20xx\\"
                         "weldment profiles).", Err.NOT_FOUND)

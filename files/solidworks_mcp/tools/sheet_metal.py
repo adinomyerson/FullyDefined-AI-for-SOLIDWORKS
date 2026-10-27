@@ -660,11 +660,29 @@ def tab(ctx, sketch):
     return ok(f"{feat.Name} from {name}: {data['volume_added_mm3']} mm3 added", data)
 
 
-def _forming_root():
+def _library_years(app=None) -> list:
+    """The SOLIDWORKS <year> data folders to look in: the running version's first (RevisionNumber 34.x = 2026), then
+    every other installed one, newest first (as weldments.py: tools share code only through core)."""
+    base = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "SOLIDWORKS")
+    try:
+        years = sorted((n[11:] for n in os.listdir(base) if n.startswith("SOLIDWORKS 20") and n[11:].isdigit()),
+                       reverse=True)
+    except OSError:
+        years = []
+    try:
+        running = str(1992 + int(str(value(app, "RevisionNumber")).split(".")[0])) if app is not None else None
+    except Exception:
+        running = None
+    if running in years:
+        years.remove(running)
+        years.insert(0, running)
+    return [os.path.join(base, f"SOLIDWORKS {y}") for y in years]
+
+
+def _forming_root(app=None):
     """The installed forming tools folder, or None."""
-    base = os.environ.get("ProgramData", r"C:\ProgramData")
-    for year in ("2026", "2025", "2024"):
-        folder = os.path.join(base, "SOLIDWORKS", f"SOLIDWORKS {year}", "design library", "forming tools")
+    for folder in _library_years(app):
+        folder = os.path.join(folder, "design library", "forming tools")
         if os.path.isdir(folder):
             return folder
     return None
@@ -707,7 +725,7 @@ def forming_tool(ctx, tool, point, rotation=0, flip=False, unit=None):
     if not isinstance(flip, bool):
         raise ToolError("flip must be true or false", Err.INPUT)
     _number(rotation, "rotation")
-    root = _forming_root()
+    root = _forming_root(ctx.app)
     if root is None:
         raise ToolError("No forming tool library is installed (design library\\forming tools).", Err.NOT_FOUND)
     library = _forming_tools(root)

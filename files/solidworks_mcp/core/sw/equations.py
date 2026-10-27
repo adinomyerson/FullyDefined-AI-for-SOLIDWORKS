@@ -39,3 +39,12 @@ def sw_set_equation(mgr, index: int, text: str) -> bool:
         return int(value(mgr, "Status")) == 0
     except Exception:
         return False
+
+
+def sw_equation_texts(doc) -> list:
+    """Every equation's text in order ('"D1@Sketch1" = "Wall" * 2'); [] when the model has none."""
+    try:
+        mgr = value(doc, "GetEquationMgr")
+        return [str(mgr.Equation(i)) for i in range(int(value(mgr, "GetCount")))]
+    except Exception:
+        return []

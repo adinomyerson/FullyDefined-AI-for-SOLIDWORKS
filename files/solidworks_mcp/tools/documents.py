@@ -393,6 +393,13 @@ def set_custom_properties(ctx, properties=None, delete=None, configuration=None)
     message = f"On {where}: " + "; ".join(parts + ([f"deleted {', '.join(data['deleted'])}"] if gone else []))
     if as_text:
         message += f". Written as text: {', '.join(as_text)}"
+    # S3.9: a link that resolves to nothing (a misspelt property or file name) is said, not left to look set
+    empty = [r["name"] for r in data["set"] if '"' in str(r.get("value"))
+             and str(r.get("resolved") or "").strip() in ("", str(r.get("value")).strip())]
+    if empty:
+        data["links_empty"] = empty
+        message += (f". WARNING: {', '.join(empty)} link{'s' if len(empty) > 1 else ''} to a value that resolves to "
+                    f"nothing: check the linked property and file names")
     return ok(message, data)
 
 

@@ -13,6 +13,19 @@ logger = logging.getLogger(__name__)
 
 
 
+ANGLE, COUNT = 1, 2                     # Dimension.GetType as SolidWorks 2026 returns it (S3.3 probe: a count is 2)
+
+
+def _driven_by(equations: list, name: str):
+    """The equation whose left side is this dimension ('"D1@Sketch1" = ...'), or None."""
+    want = f'"{name.lower()}"'
+    for text in equations:
+        left = text.split("=", 1)[0].strip().lower()
+        if left == want or left.startswith(want[:-1] + "@"):           # also "D1@Sketch1@Part1"
+            return text
+    return None
+
+
 def _feature_dimensions(ctx, feat, unit) -> list:
     """The dimensions that belong to one feature (not those of its sketch)."""
     dims = []
@@ -26,10 +39,11 @@ def _feature_dimensions(ctx, feat, unit) -> list:
             full = dim.FullName
             if own in full:
                 raw = float(dim.SystemValue)
-                angular = int(com_value(dim, "GetType")) == 1
+                kind = int(com_value(dim, "GetType"))           # 1 angle, 3 a count (S3.3), else a length
                 dims.append({"name": "@".join(full.split("@")[:2]),         # e.g. D1@Sketch1
-                             "value": round(math.degrees(raw), 4) if angular else round(ctx.from_m(raw, unit), 4),
-                             "kind": "angle_deg" if angular else "length",
+                             "value": round(math.degrees(raw), 4) if kind == ANGLE else int(round(raw))
+                             if kind == COUNT else round(ctx.from_m(raw, unit), 4),
+                             "kind": "angle_deg" if kind == ANGLE else "count" if kind == COUNT else "length",
                              "driven": int(dim.DrivenState) == 1})
             display = feat.GetNextDisplayDimension(display)
     except Exception as e:
@@ -70,7 +84,7 @@ def list_features(ctx):
 
 @tool(
     group="features",
-    description="List the model's dimensions by feature, with the names set_dimension uses (D1@Sketch1 for a sketch dimension, D1@Boss-Extrude1 for an extrude depth, for example).",
+    description="List the model's dimensions by feature, with the names set_dimension uses (D1@Sketch1 for a sketch dimension, D1@Boss-Extrude1 for an extrude depth, for example). A dimension an equation drives shows that equation: change it with set_equation.",
     params={'feature': {'type': 'string', 'description': 'Only this feature or sketch (default: all)'},
      'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'}},
     needs='any',
@@ -85,19 +99,23 @@ def list_dimensions(ctx, feature=None, unit=None):
             names = ", ".join(r[0] for r in model.tree_features(doc))
             raise ToolError(f"No feature named '{feature}'. Features: {names}", Err.INPUT)
     dims = []
+    equations = sw.equations.sw_equation_texts(doc)
     for name, _kind, feat in rows:
         for dim in _feature_dimensions(ctx, feat, unit):
             dim["feature"] = name
+            driver = _driven_by(equations, dim["name"]) if equations else None
+            if driver:
+                dim["equation"] = driver                    # set_equation changes it, set_dimension cannot
             dims.append(dim)
     return ok(f"{len(dims)} dimensions", {"unit": units.label(unit), "count": len(dims), "dimensions": dims})
 
 
 @tool(
     group="features",
-    description="Change a dimension by name and rebuild the model. Works on sketch dimensions and feature dimensions (depths, pattern spacing, fillet radius, ...). If the new value breaks a feature on rebuild, the old value is restored and the call fails. A size the tools dimensioned from the drawing (DrawnN) becomes the user's when set: it is renamed (the result says to what).",
+    description="Change a dimension by name and rebuild the model. Works on sketch dimensions and feature dimensions (depths, pattern spacing, fillet radius, ...). If the new value breaks a feature on rebuild, the old value is restored and the call fails. A size the tools dimensioned from the drawing (DrawnN) becomes the user's when set: it is renamed (the result says to what). A dimension an equation drives is refused, naming the equation (change it with set_equation).",
     params={'name': {'type': 'string',
               'description': "Dimension name from list_dimensions, e.g. 'D1@Sketch1'"},
-     'value': {'type': 'number', 'description': 'New value (length in unit, or degrees for an angle)'},
+     'value': {'type': 'number', 'description': 'New value (length in unit, degrees for an angle, or a whole number for a pattern count)'},
      'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'}},
     required=['name', 'value'],
     needs='any',
@@ -126,15 +144,20 @@ def set_dimension(ctx, name, value, unit=None):
         raise ToolError(f"No dimension named '{text}' in this model (see list_dimensions).", Err.INPUT)
 
     unit_str = units.label(unit)
-    angular = int(com_value(dim, "GetType")) == 1
+    kind = int(com_value(dim, "GetType"))
+    angular, count = kind == ANGLE, kind == COUNT
 
     def read():
         raw = float(dim.SystemValue)
-        return round(math.degrees(raw), 4) if angular else round(ctx.from_m(raw, unit), 4)
+        return round(math.degrees(raw), 4) if angular else int(round(raw)) if count else round(ctx.from_m(raw, unit), 4)
 
     if int(dim.DrivenState) == 1:
+        driver = _driven_by(sw.equations.sw_equation_texts(doc), text)      # S3.1: an equation makes it driven
+        if driver:
+            raise ToolError(f"Not changed: {text} is driven by the equation {driver}: change that with set_equation. "
+                            f"Its value is {read()}{'deg' if angular else '' if count else unit_str}.", Err.INPUT)
         raise ToolError(f"{text} is a driven (reference) dimension and cannot be set. "
-                        f"Its value is {read()}{'deg' if angular else unit_str}.", Err.INPUT)
+                        f"Its value is {read()}{'deg' if angular else '' if count else unit_str}.", Err.INPUT)
 
     old_value, old_system = read(), float(dim.SystemValue)
     volume_before = model.volume_mm3(doc)
@@ -143,7 +166,13 @@ def set_dimension(ctx, name, value, unit=None):
         number = float(value)
     except (TypeError, ValueError):
         raise ToolError(f"Bad value '{value}'", Err.INPUT)
-    new_system = math.radians(number) if angular else ctx.to_m(number, unit)
+    if count:                                       # a pattern's instance count: a whole number, no unit (S3.3)
+        if number != int(number) or number < 1:
+            raise ToolError(f"{text} is a count (a pattern's number of instances): give a whole number of 1 or more, "
+                            f"without a unit", Err.INPUT)
+        new_system = float(int(number))
+    else:
+        new_system = math.radians(number) if angular else ctx.to_m(number, unit)
     if not angular and new_system <= 0:
         raise ToolError("A length must be positive", Err.INPUT)
 
@@ -154,7 +183,7 @@ def set_dimension(ctx, name, value, unit=None):
 
     rebuilt_ok = model.rebuild(doc)
     problems = model.new_rebuild_errors(doc, errors_before)
-    shown_unit = "deg" if angular else unit_str
+    shown_unit = "deg" if angular else "" if count else unit_str
     data = {"name": text, "old_value": old_value, "new_value": read(), "unit": shown_unit,
             "solid_bodies": model.solid_body_count(doc)}
     if errors_before:
@@ -169,6 +198,17 @@ def set_dimension(ctx, name, value, unit=None):
         broken = ", ".join(p["feature"] for p in problems) or "the model"
         raise ToolError(f"Not changed: {text} = {number}{shown_unit} breaks {broken} on rebuild. "
                         f"The value was put back to {old_value}{shown_unit}.", Err.FEATURE, data)
+
+    # an equation drives it: SolidWorks puts the equation's value back on rebuild and reports no error (S3.1)
+    if abs(data["new_value"] - number) > max(1e-4, 1e-6 * abs(number)):
+        driver = _driven_by(sw.equations.sw_equation_texts(doc), text)
+        if abs(data["new_value"] - old_value) > max(1e-4, 1e-6 * abs(old_value)):
+            sw.editing.sw_set_dimension_value(dim, old_system)
+            model.rebuild(doc)
+        data["new_value"] = read()
+        why = (f"the equation {driver} drives it: change that with set_equation" if driver else
+               "SolidWorks put another value back on rebuild (something else drives it)")
+        raise ToolError(f"Not changed: {text} stays {data['new_value']}{shown_unit}: {why}.", Err.INPUT, data)
 
     volume_after = model.volume_mm3(doc)
     if volume_before is not None and volume_after is not None:
