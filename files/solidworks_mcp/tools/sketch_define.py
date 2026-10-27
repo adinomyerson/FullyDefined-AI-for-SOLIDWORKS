@@ -2,10 +2,32 @@
 
 import logging
 import math
+from contextlib import contextmanager
 
 from ..core.api import Err, geometry, ok, sketch as sk, sw, tool, ToolError, units, value as _value
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _no_ui_updates(app):
+    """SolidWorks refreshes its toolbars each time it goes idle between API calls; in an open sketch of a few dozen
+    entities that costs about 70 ms a call (P19: a 32-line outline took 40-70 s a dimension). CommandInProgress
+    stops it for the tool's calls; the earlier setting comes back after."""
+    try:
+        before = bool(_value(app, "CommandInProgress"))
+        app.CommandInProgress = True
+    except Exception as e:
+        logger.debug(f"Could not set CommandInProgress: {e}")
+        before = None
+    try:
+        yield
+    finally:
+        if before is not None:
+            try:
+                app.CommandInProgress = before
+            except Exception as e:
+                logger.debug(f"Could not restore CommandInProgress: {e}")
 
 # relation name -> (constraint for segments / mixed selections, constraint when only points are selected)
 RELATIONS = {
@@ -156,6 +178,11 @@ def _endpoint_joins(segs, entities) -> list:
     needs='any',
 )
 def list_sketch_entities(ctx, unit=None):
+    with _no_ui_updates(ctx.app):
+        return _list_sketch_entities(ctx, unit)
+
+
+def _list_sketch_entities(ctx, unit):
     doc = ctx.doc
     sketch = sk.active_sketch(doc)
     segs = sk.segments(doc, sketch)
@@ -332,6 +359,11 @@ def _ref_point_gap(doc, sketch, refs):
     needs='any',
 )
 def add_sketch_relation(ctx, relation, entities, unit=None):
+    with _no_ui_updates(ctx.app):
+        return _add_sketch_relation(ctx, relation, entities, unit)
+
+
+def _add_sketch_relation(ctx, relation, entities, unit):
     doc = ctx.doc
     sketch = sk.active_sketch(doc)
     key = (relation or "").strip().lower()
@@ -456,6 +488,11 @@ def add_sketch_relation(ctx, relation, entities, unit=None):
     needs='any',
 )
 def add_sketch_dimension(ctx, entities, value=None, unit=None, orientation="auto", more=None):
+    with _no_ui_updates(ctx.app):
+        return _add_sketch_dimension(ctx, entities, value, unit, orientation, more)
+
+
+def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
     doc = ctx.doc
     sketch = sk.active_sketch(doc)
     asks = [{"entities": entities, "value": value, "orientation": orientation}]
