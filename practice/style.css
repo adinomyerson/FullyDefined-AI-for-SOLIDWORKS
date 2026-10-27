@@ -1,0 +1,40 @@
+/* The practice results page, inside the site's layout: its colours come from assets/site.css. */
+:root { --pass: #1e7b3a; --partial: #9a6200; --fail: #b3261e; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --pass: #6fcf8a; --partial: #f0b84c; --fail: #f28b82; }
+}
+:root[data-theme="dark"] { --pass: #6fcf8a; --partial: #f0b84c; --fail: #f28b82; }
+
+.pp-score { font-size: 1.2rem; font-weight: 600; margin: 0 0 8px; }
+.pp-credit, .pp-notes { color: var(--muted); font-size: 0.92rem; max-width: 80ch; }
+.pp-notes { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+.pp-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 16px; }
+.pp-filters button {
+  font: inherit; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+}
+.pp-filters button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+.page .prose.wide > .pp-cards { max-width: none; }
+.prose .pp-cards {
+  list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px;
+}
+.pp-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  display: flex; flex-direction: column; box-shadow: var(--shadow); margin: 0; padding: 0;
+}
+.prose .pp-card img, .pp-card .pp-none {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #ffffff; display: block;
+  border: 0; border-radius: 0; border-bottom: 1px solid var(--line);
+}
+.pp-card .pp-none { display: grid; place-items: center; color: #8a93a3; font-size: 0.9rem; }
+.pp-card .pp-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.prose .pp-card h2 { font-size: 1.02rem; margin: 0; }
+.pp-status { font-weight: 700; margin: 0; }
+.pp-status.pass { color: var(--pass); }
+.pp-status.partial { color: var(--partial); }
+.pp-status.fail { color: var(--fail); }
+.pp-numbers { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.92rem; margin: 0; }
+.pp-reason { margin: 0; font-size: 0.92rem; }

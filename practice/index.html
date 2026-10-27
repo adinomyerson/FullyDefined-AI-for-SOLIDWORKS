@@ -1,0 +1,31 @@
+---
+title: Practice problem results
+description: SOLIDWORKS practice problems FullyDefined has attempted, with a picture of the model it built and its measured result against the official answer.
+wide: true
+---
+<link rel="stylesheet" href="style.css">
+
+<p class="lead">Every practice problem we have attempted is shown here, solved or not. The AI built each part from the
+  problem's drawing alone. The picture is the model it built, and the number is measured from that model and
+  compared with the official answer.</p>
+<p id="score" class="pp-score" aria-live="polite">Loading…</p>
+<p class="pp-credit">Problems from the <a id="source-link" href="https://www.solidworks.com/solution/education/practice-problems">SOLIDWORKS Practice Problems</a>
+  database. The problems, drawings and answers are theirs and are not copied here: follow each link to see the
+  problem itself.</p>
+
+<div class="pp-filters" role="group" aria-label="Show">
+  <button type="button" data-filter="all" aria-pressed="true">All</button>
+  <button type="button" data-filter="pass" aria-pressed="false">Pass</button>
+  <button type="button" data-filter="partial" aria-pressed="false">Partial</button>
+  <button type="button" data-filter="fail" aria-pressed="false">Fail</button>
+</div>
+<ul id="problems" class="pp-cards"></ul>
+<noscript><p>This page needs JavaScript to read its results file: <a href="results.json">results.json</a>.</p></noscript>
+
+<div class="pp-notes">
+  <p><strong>Pass:</strong> the measured value is within <span id="tolerance">0.5</span>% of the official answer.
+    <strong>Partial:</strong> within <span id="partial-tolerance">2</span>%. <strong>Fail:</strong> further off, or
+    no part was saved. Each miss has its reason in plain words.</p>
+  <p id="updated"></p>
+</div>
+<script src="results.js"></script>

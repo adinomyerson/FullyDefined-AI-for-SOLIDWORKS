@@ -1,0 +1,290 @@
+{
+  "updated": "0.3.1",
+  "pass_within_percent": 0.5,
+  "source": {
+    "name": "SOLIDWORKS Practice Problems",
+    "url": "https://www.solidworks.com/solution/education/practice-problems"
+  },
+  "problems": [
+    {
+      "name": "Practice Problem 4.6",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/4.6.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 551487.0,
+      "ours": 551486.96,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 4.26",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/4.26.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 171634.0,
+      "ours": 171564.47,
+      "difference_percent": -0.04,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 4.27",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/4.27.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 185177.0,
+      "ours": 185179.26,
+      "difference_percent": 0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 4.34",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/4.34.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 42225.0,
+      "ours": 42340.38,
+      "difference_percent": 0.27,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 5.6",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/5.6.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 2344.0,
+      "ours": 2356.98,
+      "difference_percent": 0.55,
+      "status": "partial",
+      "reason": "We couldn't resolve the depth of the small recess on the side boss from the drawing; our estimate came out slightly shallow."
+    },
+    {
+      "name": "Practice Problem 6.12",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/6.12.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 4630.0,
+      "ours": 5026.83,
+      "difference_percent": 8.57,
+      "status": "fail",
+      "reason": "We couldn't resolve the ball's size from the drawing; our estimate came out too large."
+    },
+    {
+      "name": "Practice Problem 7.7",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.7.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 771.0,
+      "ours": 770.35,
+      "difference_percent": -0.08,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 7.8",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 18306608.0,
+      "ours": null,
+      "difference_percent": null,
+      "status": "fail",
+      "reason": "The run stopped early: one large dimensioning step took too long and SolidWorks stayed busy, so no part was saved."
+    },
+    {
+      "name": "Practice Problem 7.9",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.9.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 21908.0,
+      "ours": 21635.5,
+      "difference_percent": -1.24,
+      "status": "partial",
+      "reason": "We couldn't resolve a few small sizes from the drawing (the raised ears' outline and a recess depth); our part came out slightly light."
+    },
+    {
+      "name": "Practice Problem 7.10",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.10.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 113890.0,
+      "ours": 113889.38,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 7.13",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.13.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 214512.0,
+      "ours": 214511.97,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 7.25",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.25.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 7151.0,
+      "ours": 7119.79,
+      "difference_percent": -0.44,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 7.40",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.40.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 571167.0,
+      "ours": 620288.12,
+      "difference_percent": 8.6,
+      "status": "fail",
+      "reason": "We couldn't resolve the cross rods from the drawing (the \"2\" in Section B-B); our part came out heavy."
+    },
+    {
+      "name": "Practice Problem 7.41",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.41.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 224373.0,
+      "ours": 224453.23,
+      "difference_percent": 0.04,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 7.46",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/7.46.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 401679.0,
+      "ours": 401678.82,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 8.5",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/8.5.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 53816.0,
+      "ours": 56749.93,
+      "difference_percent": 5.45,
+      "status": "fail",
+      "reason": "One angled side wall of the column was run all the way up; the drawing shows it only near the bottom."
+    },
+    {
+      "name": "Practice Problem 9.4A",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/9.4A.png",
+      "quantity": "center of mass",
+      "unit": "in",
+      "official": [
+        0.0,
+        -4.51,
+        0.0
+      ],
+      "ours": [
+        -0.0,
+        -4.506,
+        0.0
+      ],
+      "difference_percent": 0.0,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 9.11",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/9.11.png",
+      "quantity": "center of mass",
+      "unit": "mm",
+      "official": [
+        -30.21,
+        337.23,
+        -187.5
+      ],
+      "ours": [
+        -30.217,
+        337.226,
+        -187.5
+      ],
+      "difference_percent": 0.001,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 10.5A",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/10.5A.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 13267.0,
+      "ours": 13463.63,
+      "difference_percent": 1.48,
+      "status": "partial",
+      "reason": "We couldn't resolve a few small features inside the jaw from the drawing; our part came out slightly heavy."
+    },
+    {
+      "name": "Practice Problem 10.6",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/10.6.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 53246.0,
+      "ours": 54599.96,
+      "difference_percent": 2.54,
+      "status": "fail",
+      "reason": "We couldn't resolve the ring's size in Detail C from the drawing; our estimate came out too large."
+    },
+    {
+      "name": "Practice Problem 10.8A",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/10.8A.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 431376.0,
+      "ours": 431596.54,
+      "difference_percent": 0.05,
+      "status": "pass",
+      "reason": ""
+    },
+    {
+      "name": "Practice Problem 10.9A",
+      "url": "https://www.solidworks.com/solution/education/practice-problems",
+      "picture": "pictures/10.9A.png",
+      "quantity": "volume",
+      "unit": "mm³",
+      "official": 34035.0,
+      "ours": 35977.02,
+      "difference_percent": 5.71,
+      "status": "fail",
+      "reason": "We couldn't resolve the size of two openings from the drawing; our estimates came out too small."
+    }
+  ]
+}
