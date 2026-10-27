@@ -93,14 +93,14 @@
     {
       "name": "Practice Problem 7.8",
       "url": "https://www.solidworks.com/solution/education/practice-problems",
-      "picture": "",
+      "picture": "pictures/7.8.png",
       "quantity": "volume",
       "unit": "mm³",
       "official": 18306608.0,
-      "ours": null,
-      "difference_percent": null,
-      "status": "fail",
-      "reason": "The run stopped early: one large dimensioning step took too long and SolidWorks stayed busy, so no part was saved."
+      "ours": 18306607.97,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": "Built with release 0.3.2, which fixed a slow dimensioning step."
     },
     {
       "name": "Practice Problem 7.9",

@@ -244,3 +244,14 @@ a:focus-visible, summary:focus-visible, .btn:focus-visible { outline: 2px solid 
 .examples { align-items: start; }
 .example .pair { grid-template-columns: 1fr; justify-items: stretch; }
 .example .pair .arrow { justify-self: center; transform: rotate(90deg); line-height: 1; }
+
+/* Home: parts built from official practice problems */
+.showcase { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
+@media (max-width: 1000px) { .showcase { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .showcase { grid-template-columns: 1fr; } }
+.show { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.show img { display: block; width: 100%; height: auto; background: #fff; border-bottom: 1px solid var(--line); }
+.show figcaption { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 0.92rem; }
+.show figcaption span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.show-more { margin: 12px 0 0; font-weight: 600; }
+.show-credit { color: var(--muted); font-size: 0.9rem; margin: 16px 0 0; max-width: 80ch; }
