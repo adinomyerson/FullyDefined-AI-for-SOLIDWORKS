@@ -196,7 +196,7 @@
       "ours": 56749.93,
       "difference_percent": 5.45,
       "status": "fail",
-      "reason": "One angled side wall of the column was run all the way up; the drawing shows it only near the bottom."
+      "reason": "We couldn't resolve a few sizes from the drawing (the side web's angled face and how deep the lug cuts go); our part came out heavy."
     },
     {
       "name": "Practice Problem 9.4A",
