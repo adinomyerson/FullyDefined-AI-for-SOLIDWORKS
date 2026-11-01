@@ -129,7 +129,7 @@ are the user's design: ask; forming tools come in their library sizes only. Wall
 instead: `convert_to_sheet_metal`. Flange direction: an open profile is the section across the bends, `depth` runs
 along them (flanges along the long sides: the profile across the short side, the long side as `depth`). Check each
 bend's width with `get_sheet_metal_info` (bends and flat size) against the side the user named. DXF: save, then
-`export_flat_pattern_dxf` (`dxf_unit` if the shop needs it); bend lines are on layer BEND, which must not be cut.
+`export_flat_pattern_dxf` (`dxf_unit` if the shop needs it); bend lines and bend notes are on layer BEND, which must not be cut.
 
 **D. Assembly** (draft). Save every part first. `create_new_assembly`, then `add_component` for each part (the first
 is fixed; place the others near where they belong). Mates: `add_mate` with points on the faces, or references from

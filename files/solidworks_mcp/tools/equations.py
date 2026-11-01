@@ -144,7 +144,7 @@ def list_equations(ctx):
 
 @tool(
     group="features",
-    description="Set an equation and rebuild. name is a global variable ('Wall'; created when new) or a dimension ('D1@Sketch1'); alternatively give index from list_equations. expression is the right-hand side, e.g. '3mm' or '\"Wall\" * 2'; a number without a unit is in the document's unit (20 is 20 inch in an inch document). A change that breaks the model is rolled back.",
+    description="Set an equation and rebuild. name is a global variable ('Wall'; created when new) or a dimension ('D1@Sketch1'); alternatively give index from list_equations. expression is the right-hand side, e.g. '3mm' or '\"Wall\" * 2'; a number without a unit is in the document's unit (20 is 20 inch in an inch document). A change that breaks the model is rolled back. A size the tools dimensioned from the drawing (DrawnN) becomes the user's when an equation drives it: it is renamed (the result says to what).",
     params={"name": {"type": "string", "description": "Global variable (e.g. 'Wall') or dimension (e.g. 'D1@Sketch1')"},
             "index": {"type": "integer", "description": "Index of an existing equation (instead of name)"},
             "expression": {"type": "string", "description": "Right-hand side, e.g. '3mm', '\"Wall\" * 2'"}},
@@ -185,14 +185,25 @@ def set_equation(ctx, expression, name=None, index=None):
     if f'"{own}"'.lower() in expr.lower():
         raise ToolError(f"{own} cannot refer to itself (circular reference).", Err.INPUT)
     used = _apply(doc, mgr, at, new_text, old_text, dimension)
+    # a size the tools dimensioned from the drawing (DrawnN) that the user drives by an equation is the user's now,
+    # as set_dimension makes it (S3.8)
+    ours, claimed = sk.claim_drawn(doc, dimension) if dimension is not None else (False, None)
     result = _rows(mgr)[used]
     data = {"equation": result, "added": old_text is None, "old_text": old_text, "unit": _doc_unit(doc)}
+    note = ""
+    if claimed:
+        data["renamed"] = "@".join(claimed.split("@")[:2])
+        note = f"; {target} is your dimension now, renamed {data['renamed']}"
+    elif ours:
+        data["rename_failed"] = True
+        note = (f". WARNING: {target} could not be renamed: it still gives way to a conflicting relation or "
+                f"dimension added later")
     volume_after = model.volume_mm3(doc)
     if volume_before is not None and volume_after is not None:
         data["volume_change_mm3"] = round(volume_after - volume_before, 3)
     verb = "Added" if old_text is None else "Changed"
-    return ok(f"{verb} equation {used}: {result['text']} (value {result['value']} {data['unit']}), model rebuilt",
-              data)
+    return ok(f"{verb} equation {used}: {result['text']} (value {result['value']} {data['unit']}), model rebuilt"
+              + note, data)
 
 
 @tool(

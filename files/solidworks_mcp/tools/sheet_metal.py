@@ -327,27 +327,67 @@ def _dxf_lines(raw: list) -> list:
     return out
 
 
+TEXT_ENTITIES = ("MTEXT", "TEXT")
+
+
+def _dxf_texts(raw: list) -> list:
+    """[index of the layer value line] of the text entities (the bend notes) in a DXF's ENTITIES section."""
+    out, in_entities, current = [], False, False
+    for i in range(0, len(raw) - 1, 2):
+        code, val = raw[i].strip(), raw[i + 1].strip()
+        if code == "0":
+            current = in_entities and val in TEXT_ENTITIES
+            if val == "ENDSEC":
+                in_entities = False
+        elif code == "2" and val == "ENTITIES":
+            in_entities = True
+        elif current and code == "8":
+            out.append(i + 1)
+    return out
+
+
+def _drop_texts(text: str) -> str:
+    """The DXF without its text entities (the bend notes), for when they cannot go on their own layer."""
+    raw = text.splitlines(keepends=True)
+    keep, in_entities, skipping = [], False, False
+    for i in range(0, len(raw) - 1, 2):
+        code, val = raw[i].strip(), raw[i + 1].strip()
+        if code == "0":
+            skipping = in_entities and val in TEXT_ENTITIES
+            if val == "ENDSEC":
+                in_entities = False
+        elif code == "2" and val == "ENTITIES":
+            in_entities = True
+        if not skipping:
+            keep += raw[i:i + 2]
+    return "".join(keep + raw[len(raw) - len(raw) % 2:])
+
+
 def _final_dxf(with_bends: str, without: str) -> tuple:
-    """The file to write from the two exports: the bend lines on layer BEND; when they cannot be moved there, the
-    export without them (a cutter must never get them on layer 0). Returns (text, lines moved; -1 = left out)."""
-    text, moved = _bend_layer(with_bends, without)
-    if moved:
-        return text, moved
+    """The file to write from the two exports: the bend lines and bend notes on layer BEND; when they cannot be moved
+    there, the export without the bend lines and with no notes (a cutter must never get them on layer 0). Returns
+    (text, lines moved; -1 = left out, notes moved)."""
+    text, moved, notes = _bend_layer(with_bends, without)
+    if moved or notes:
+        return text, moved, notes
     if len(_dxf_lines(with_bends.splitlines(keepends=True))) != len(_dxf_lines(without.splitlines(keepends=True))):
-        return without, -1
-    return with_bends, 0
+        return _drop_texts(without), -1, 0
+    return _drop_texts(with_bends), 0, 0
 
 
 def _bend_layer(with_bends: str, without: str) -> tuple:
-    """Put the bend lines of a flat-pattern DXF on their own layer: the LINEs of the export with bend lines that the
-    export without them lacks go to layer BEND, which is added to the layer table (a new handle from $HANDSEED).
-    SolidWorks puts everything on layer 0, where a laser or water-jet program would cut along the bends. Returns (the
-    new text, how many lines moved); the text unchanged when there are none or the file is not as expected."""
+    """Put the bend lines and bend notes of a flat-pattern DXF on their own layer: the LINEs of the export with bend
+    lines that the export without them lacks, and every text entity, go to layer BEND, which is added to the layer
+    table (a new handle from $HANDSEED). SolidWorks puts everything on layer 0, where a laser or water-jet program
+    would cut along the bends and the notes. Returns (the new text, how many lines moved, how many notes moved); the
+    text unchanged when there are none or the file is not as expected."""
     raw = with_bends.splitlines(keepends=True)
     plain = {ends for _at, ends in _dxf_lines(without.splitlines(keepends=True))}
-    bends = [at for at, ends in _dxf_lines(raw) if ends not in plain]
+    lines = [at for at, ends in _dxf_lines(raw) if ends not in plain]
+    notes = _dxf_texts(raw)
+    bends = lines + notes
     if not bends:
-        return with_bends, 0
+        return with_bends, 0, 0
     strip = [line.strip() for line in raw]
     eol = raw[0][len(raw[0].rstrip("\r\n")):] or "\n"
 
@@ -364,23 +404,23 @@ def _bend_layer(with_bends: str, without: str) -> tuple:
         plot_style = next((strip[i + 1] for i in range(table + 1, end, 2) if strip[i] == "390"), None)
         have_layer = any(strip[i] == "2" and strip[i + 1] == BEND_LAYER for i in range(table + 1, end, 2))
     except (ValueError, StopIteration, IndexError):
-        return with_bends, 0
+        return with_bends, 0, 0
     for at in bends:
         raw[at] = BEND_LAYER + eol
     if have_layer:                                      # already in the table (a layer map, say): only the lines move
-        return "".join(raw), len(bends)
+        return "".join(raw), len(lines), len(notes)
     record = (line(0, "LAYER") + line(5, f"{handle:X}") + line(330, owner) + line(100, "AcDbSymbolTableRecord")
               + line(100, "AcDbLayerTableRecord") + line(2, BEND_LAYER) + line(70, 0) + line(62, 1)
               + line(6, "Continuous") + line(370, -3) + (line(390, plot_style) if plot_style else []))
     raw[end:end] = record                               # before the layer table's ENDTAB; earlier indexes stay
     raw[count_at] = f"{int(strip[count_at]) + 1}{eol}"
     raw[seed_at] = f"{handle + 1:X}{eol}"
-    return "".join(raw), len(bends)
+    return "".join(raw), len(lines), len(notes)
 
 
 @tool(
     group="sheetmetal",
-    description="Export the active sheet metal part's flat pattern as a DXF: outline and holes on layer 0, bend lines on their own layer BEND (so a cutting program can leave them out), bend notes as text. Forming tools are not drawn (a dimple leaves only the outline). The file is in the document's length unit (inches from an inch template; the file's $INSUNITS says which) unless dxf_unit asks for mm or inch: then the document's unit is switched for the export and put back. The part must be saved, and an existing file needs overwrite. Returns path, bytes, flat size, dxf_unit (the unit of the file's coordinates) and bend_lines (how many are on layer BEND). SolidWorks marks the part modified.",
+    description="Export the active sheet metal part's flat pattern as a DXF: outline and holes on layer 0, bend lines and bend notes (text) on their own layer BEND (so a cutting program can leave them out); layer 0 holds only what is cut. Forming tools are not drawn (a dimple leaves only the outline). The file is in the document's length unit (inches from an inch template; the file's $INSUNITS says which) unless dxf_unit asks for mm or inch: then the document's unit is switched for the export and put back. The part must be saved, and an existing file needs overwrite. Returns path, bytes, flat size, dxf_unit (the unit of the file's coordinates), bend_lines and bend_notes (how many are on layer BEND). SolidWorks marks the part modified.",
     params={"filepath": {"type": "string", "description": "Where to write it, ending in .dxf"},
             "overwrite": {"type": "boolean", "default": False, "description": "Replace an existing file"},
             "unit": {"type": "string", "description": "Unit of the flat size (mm, cm, m, inch or ft)"},
@@ -443,7 +483,7 @@ def export_flat_pattern_dxf(ctx, filepath, overwrite=False, unit=None, dxf_unit=
         if len(texts) != 2:
             raise ToolError("SolidWorks could not export the flat pattern (both with and without its bend lines, "
                             "to put them on their own layer). Nothing was written." + unit_note, Err.SAVE)
-        text, moved = _final_dxf(*texts)
+        text, moved, notes = _final_dxf(*texts)
         try:
             with open(path, "w", encoding="latin-1", newline="") as f:
                 f.write(text)
@@ -457,14 +497,17 @@ def export_flat_pattern_dxf(ctx, filepath, overwrite=False, unit=None, dxf_unit=
                         Err.EXPORT, {"path": path, "dxf_unit": got})
     flat = _measure_flat(doc)
     data = {"path": path, "bytes": os.path.getsize(path), "replaced": existed, "unit": units.label(unit),
-            "dxf_unit": got, "bend_lines": max(moved, 0), "bend_layer": BEND_LAYER if moved > 0 else None}
+            "dxf_unit": got, "bend_lines": max(moved, 0), "bend_notes": notes,
+            "bend_layer": BEND_LAYER if moved > 0 or notes else None}
     if moved < 0:
-        unit_note += " WARNING: the bend lines could not be put on their own layer, so they were left out."
+        unit_note += " WARNING: the bend lines and notes could not be put on their own layer, so they were left out."
     if not switch["restored"]:
         data["document_unit_restored"] = False
     if flat and flat["size_mm"]:
         data["flat_size"] = [_conv(ctx, v / 1000.0, unit) for v in flat["size_mm"]]
     bends = f"; {moved} bend line{'' if moved == 1 else 's'} on layer {BEND_LAYER}" if moved > 0 else ""
+    if notes:
+        bends += f"; {notes} bend note{'' if notes == 1 else 's'} (text) on layer {BEND_LAYER}"
     return ok(f"Flat pattern written to {path} ({data['bytes']} bytes, coordinates in {got or 'the document unit'})"
               + bends
               + (f"; flat size {data['flat_size']}{data['unit']}" if "flat_size" in data else "") + unit_note, data)

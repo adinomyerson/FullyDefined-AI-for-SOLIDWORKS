@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import re
+from contextlib import contextmanager
 
 from ..core.api import Err, geometry, model, ok, sketch as sk, sw, tool, ToolError, units, value
 
@@ -208,6 +209,27 @@ def _member_length_m(body, hint_m=None):
     return extent(max(groups, key=lambda g: g[1])[0])
 
 
+@contextmanager
+def _no_ui_updates(app):
+    """SolidWorks refreshes its toolbars each time it goes idle between API calls (P19). CommandInProgress stops it
+    for the tool's calls; the earlier setting comes back after. The same as sketch_define's (tools import only
+    core.api)."""
+    try:
+        before = bool(value(app, "CommandInProgress"))
+        app.CommandInProgress = True
+    except Exception as e:
+        logger.debug(f"Could not set CommandInProgress: {e}")
+        before = None
+    try:
+        yield
+    finally:
+        if before is not None:
+            try:
+                app.CommandInProgress = before
+            except Exception as e:
+                logger.debug(f"Could not restore CommandInProgress: {e}")
+
+
 def _number_in(text: str):
     m = re.search(r"-?\d+(?:[.,]\d+)?", text or "")
     return float(m.group(0).replace(",", ".")) if m else None
@@ -220,6 +242,13 @@ def _number_in(text: str):
     needs="part",
 )
 def get_cut_list(ctx, unit=None):
+    # every member's edges and extreme points are read: a 13-member frame took 72-100 s with SolidWorks refreshing
+    # its toolbars between the calls, 4 s without
+    with _no_ui_updates(ctx.app):
+        return _get_cut_list(ctx, unit)
+
+
+def _get_cut_list(ctx, unit):
     doc = ctx.doc
     sw.weldments.sw_update_cut_list(doc)
     folders = sw.weldments.sw_cut_list_folders(doc)
