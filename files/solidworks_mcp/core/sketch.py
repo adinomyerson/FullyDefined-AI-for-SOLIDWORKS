@@ -320,9 +320,11 @@ def free_entities(doc, sketch, quick: bool = False) -> Dict:
 
 
 def _kind(seg) -> str:
-    """line, circle, arc, spline or entity: for messages."""
+    """line, circle, arc, spline or entity: for messages. The type comes with the segment's key when this call has
+    read it already (segment_key); otherwise GetType alone, as reading the whole key would cost more."""
     try:
-        kind = int(value(seg, "GetType"))
+        hit = _keys_read["keys"].get(id(seg)) if _keys_read["call"] == com.call_token() else None
+        kind = hit[1][0] if hit is not None and hit[0] is seg else int(value(seg, "GetType"))
         if kind == 0:
             return "line"
         if kind == 1:
@@ -554,6 +556,72 @@ def _key_points(sketch, keys: set) -> list:
     return ends
 
 
+def _points_by_key(sketch, keys: set) -> Dict[tuple, list]:
+    """{key: _key_points(sketch, {key})} for each of these keys, from one listing of the sketch (_key_points lists it
+    again for every key). No keys: nothing is read."""
+    if not keys:
+        return {}
+    out = {k: [] for k in keys}
+    for key, seg in _keyed(sketch):
+        if key not in out:
+            continue
+        for getter in ("GetStartPoint2", "GetEndPoint2", "GetCenterPoint2"):
+            try:
+                p = value(seg, getter)
+                if p is not None:
+                    out[key].append((float(p.X), float(p.Y)))
+            except Exception:
+                continue
+    return out
+
+
+def _entity_key(sketch, measured: list):
+    """The segment a dimension sizes, from the entities it measures: the first key (in the order of a set of the
+    sketch's keys) whose segment holds all of them, a circle itself or the line whose two ends it measures. Raises
+    StopIteration when none does. One listing of the sketch, each key's points read when first needed, and each
+    measured entity read once (it used to be listed and read again for every key)."""
+    rows = _keyed(sketch)
+    all_keys = {k for k, _ in rows}
+    points, seen = {}, {}
+
+    def ends(k):
+        if k not in points:
+            points[k] = []
+            for key, seg in rows:
+                if key != k:
+                    continue
+                for getter in ("GetStartPoint2", "GetEndPoint2", "GetCenterPoint2"):
+                    try:
+                        p = value(seg, getter)
+                        if p is not None:
+                            points[k].append((float(p.X), float(p.Y)))
+                    except Exception:
+                        continue
+        return points[k]
+
+    def what(e):
+        """('key', its key) / ('point', (x, y)) / ('none',): what _touches reads of an entity, read once."""
+        if id(e) not in seen:
+            try:
+                seen[id(e)] = (e, ("key", segment_key(e)))
+            except Exception:
+                try:
+                    seen[id(e)] = (e, ("point", (float(e.X), float(e.Y))))
+                except Exception:
+                    seen[id(e)] = (e, ("none",))
+        return seen[id(e)][1]
+
+    def touches(e, k):
+        kind = what(e)
+        if kind[0] == "key":
+            return kind[1] == k
+        if kind[0] == "point":
+            return any(math.dist(kind[1], p) <= JOIN_TOLERANCE_M for p in ends(k))
+        return False
+
+    return next(k for k in all_keys if measured and all(touches(e, k) for e in measured))
+
+
 def dimensions_on(sketch, keys: set) -> List[tuple]:
     """(display dimension, short name, value in metres or radians, is it ours: Drawn) for the dimensions of the
     sketch that measure one of these entities."""
@@ -605,11 +673,9 @@ def give_way(app, doc, sketch, keys: set, attempt, replaced: list) -> Optional[t
         # the segment it sizes: itself (a circle's diameter) or the one whose ends it holds (a line's length)
         try:
             measured = _relation_entities(sketch, name)
-            all_keys = {k for k, _ in _keyed(sketch)}
             # the segment that holds all of it: a circle itself, or the line whose two ends it measures (a
             # corner point also touches the next line)
-            entity_key = next(k for k in all_keys if measured
-                              and all(_touches(e, {k}, _key_points(sketch, {k})) for e in measured))
+            entity_key = _entity_key(sketch, measured)
             at = [float(v) for v in value(value(display, "GetAnnotation"), "GetPosition")]
         except Exception:
             continue
@@ -697,6 +763,56 @@ def forget_sizes(doc, sketch) -> None:
         _pending_sizes.pop((doc_title(doc), str(sketch.Name)), None)
     except Exception:
         pass
+
+
+def pending_keys(doc, sketch) -> List[tuple]:
+    """The segment keys (segment_key) with a drawn size still to dimension when the sketch is closed or defined."""
+    try:
+        return [item["key"] for item in _pending_sizes.get((doc_title(doc), str(sketch.Name)), [])]
+    except Exception:
+        return []
+
+
+def drop_pending(doc, sketch, key: tuple) -> bool:
+    """Forget the drawn size remembered for this segment: a tool changed its length in place (trim, extend), so the
+    size it was drawn with no longer holds. It is not dimensioned on closing, and the entity is reported free like
+    any other with no size. The other entities' sizes stay. True when one was dropped. key: a segment key
+    (segment_key: integers), not an entity id; anything else is a programming error and raises TypeError. (A circle
+    trimmed into an arc keeps its radius: its size need not be dropped.)"""
+    if not isinstance(key, (tuple, list)) or not key or not all(isinstance(v, int) and not isinstance(v, bool)
+                                                                    for v in key):
+        raise TypeError(f"drop_pending takes a segment key (integers), not {key!r}")
+    try:
+        pending_key = (doc_title(doc), str(sketch.Name))
+    except Exception:
+        return False
+    items = _pending_sizes.get(pending_key)
+    if not items:
+        return False
+    kept = [item for item in items if item["key"] != tuple(key)]
+    if len(kept) == len(items):
+        return False
+    if kept:
+        _pending_sizes[pending_key] = kept
+    else:
+        _pending_sizes.pop(pending_key, None)
+    return True
+
+
+def sketch_changed() -> None:
+    """A tool changed the sketch's entities in place (trim, extend, a split): this call's listings are read again on
+    next use. The count alone cannot tell, since an entity can be swapped at the same count. The drawing order of
+    the entities that still exist is kept; new ones go to the end, as always (segments)."""
+    forget_call()
+
+
+def renumbered(before: List[tuple], after: List[tuple]) -> Dict[int, Optional[int]]:
+    """{old id: new id, or None if that entity is gone}, from the segment keys in id order (list_sketch_entities'
+    ids, 1-based) before and after a change. A key in both keeps its entity; ids shift when an earlier entity goes.
+    The keys must be unique: when they repeat, segments() falls back to SolidWorks' order and this map is wrong (check
+    len(set(keys)) == len(keys) first)."""
+    position = {key: i for i, key in enumerate(after, 1)}
+    return {i: position.get(key) for i, key in enumerate(before, 1)}
 
 
 def auto_define(doc, sketch) -> Dict:
@@ -827,6 +943,15 @@ def sizes_missing(doc, sketch, free: Dict) -> List[str]:
     counts as sized (the hint must never ask for a size the user already gave)."""
     segs = segments(doc, sketch)
     sized, equal_groups = set(), []
+    read = {}
+
+    def line_points():
+        """The lines and every line's ends (_key_points per line), from one listing, read when first needed."""
+        if "points" not in read:
+            lines = [s for s in segs if _kind(s) == "line"]
+            read["lines"], read["points"] = lines, _points_by_key(sketch, {segment_key(s) for s in lines})
+        return read["lines"], read["points"]
+
     try:
         for relation in list(sketch.RelationManager.GetRelations(0) or []):
             kind = int(value(relation, "GetRelationType"))
@@ -850,8 +975,9 @@ def sizes_missing(doc, sketch, free: Dict) -> List[str]:
             elif keys:                                              # one line's length, or between two lines
                 sized |= keys
             elif len(points) == 2:                                  # between two points: a line's two ends
-                for seg in (s for s in segs if _kind(s) == "line"):
-                    ends = _key_points(sketch, {segment_key(seg)})
+                lines, line_ends = line_points()
+                for seg in lines:
+                    ends = line_ends[segment_key(seg)]
                     if len(ends) >= 2 and all(any(math.dist(p, q) <= JOIN_TOLERANCE_M for q in ends[:2])
                                               for p in points):
                         sized.add(segment_key(seg))
@@ -859,8 +985,8 @@ def sizes_missing(doc, sketch, free: Dict) -> List[str]:
         logger.debug(f"Could not read the sizes: {e}")
         return []
     # a chain of lines shares its sizes, and an equal relation passes one on
-    lines = [s for s in segs if _kind(s) == "line"]
-    ends = {segment_key(s): _key_points(sketch, {segment_key(s)})[:2] for s in lines}
+    lines, line_ends = line_points()
+    ends = {segment_key(s): line_ends[segment_key(s)][:2] for s in lines}
     grown = True
     while grown:
         grown = False
@@ -994,6 +1120,7 @@ def tie_to_origin(doc, sketch, entities, centre=None, drawn=None) -> bool:
     opposite corners of a rectangle whose centre is (0, 0), gets a construction diagonal with its midpoint on the
     origin. A tie that would over-define the sketch is taken back. True when tied. drawn: the points (metres) the
     call drew, its ends and centres; when none is near the origin nothing is read."""
+    from . import planes
     from .sw import common as sw_common
     if centre is None and drawn is not None and not any(math.hypot(x, y) <= ORIGIN_NEAR_M for x, y in drawn):
         return False
@@ -1007,7 +1134,9 @@ def tie_to_origin(doc, sketch, entities, centre=None, drawn=None) -> bool:
 
     def relate(target, constraint) -> bool:
         doc.ClearSelection2(True)
-        if not (target.Select4(False, null) and sw_common.sw_select_named(doc, "Point1@Origin", "EXTSKETCHPOINT", 0)):
+        if not (target.Select4(False, null)
+                and (sw_common.sw_select_named(doc, "Point1@Origin", "EXTSKETCHPOINT", 0)
+                     or planes.select_origin(doc, after_english=True))):    # a localized origin, only on failure
             doc.ClearSelection2(True)
             return False
         doc.SketchAddConstraints(constraint)

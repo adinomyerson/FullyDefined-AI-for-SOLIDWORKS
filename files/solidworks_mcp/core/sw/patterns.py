@@ -5,6 +5,7 @@ import logging
 
 from ..com import value
 from .common import sw_clear_selection, sw_select_named
+from .sketches import sw_select_plane
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,10 @@ def sw_select_face(doc, face, mark: int, append: bool) -> bool:
 
 
 def sw_insert_axis(doc, plane_a: str, plane_b: str) -> bool:
-    """A reference axis where two standard planes meet. False when the planes could not be selected."""
+    """A reference axis where two standard planes meet (in any language: sw_select_plane). False when the planes
+    could not be selected."""
     sw_clear_selection(doc)
-    if not (sw_select_named(doc, plane_a, "PLANE", 0, append=False) and sw_select_named(doc, plane_b, "PLANE", 0)):
+    if not (sw_select_plane(doc, plane_a, 0, append=False) and sw_select_plane(doc, plane_b, 0)):
         sw_clear_selection(doc)
         return False
     doc.InsertAxis2(True)

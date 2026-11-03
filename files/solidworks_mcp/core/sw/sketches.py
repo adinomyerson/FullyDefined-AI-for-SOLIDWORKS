@@ -1,8 +1,49 @@
 """Sketches and planes: the calls that open and close a sketch and make an offset plane.
 The tools do the inputs, messages and measuring."""
 
-from ..com import null_object
+from .. import planes
+from ..com import null_object, plane_feature_name
 from ..results import Err, ToolError
+from .common import sw_select_named
+
+
+def sw_select_plane(doc, text, mark: int, append: bool = True):
+    """Select the plane text names (Front / Top / Right, or a plane's own name) with a mark: by the English name
+    first, exactly as before; only when that fails, by the name the document uses for that standard plane (a
+    localized template). The name selected, or None."""
+    name = plane_feature_name(text)
+    if sw_select_named(doc, name, "PLANE", mark, append=append):
+        return name
+    local = planes.fallback_name(doc, text)
+    if local and sw_select_named(doc, local, "PLANE", mark, append=append):
+        return local
+    return None
+
+
+def sw_plane_feature(doc, text):
+    """(name, feature) of the plane text names: the English name first, as before; the document's own name for a
+    standard plane only when that is not there. The feature is None when neither is found."""
+    name = plane_feature_name(text)
+    try:
+        feat = doc.FeatureByName(name)
+    except Exception:
+        feat = None
+    if feat is None:
+        local = planes.fallback_name(doc, text)
+        if local:
+            try:
+                name, feat = local, doc.FeatureByName(local)
+            except Exception:
+                feat = None
+    return name, feat
+
+
+def sw_select_origin(doc, append: bool, mark: int) -> bool:
+    """Select the origin's point: "Point1@Origin" first, as before; in a document whose origin has another name,
+    that name (core/planes)."""
+    if sw_select_named(doc, "Point1@Origin", "EXTSKETCHPOINT", mark, append=append):
+        return True
+    return planes.select_origin(doc, append, mark, after_english=True)
 
 
 def sw_insert_sketch(doc) -> None:
@@ -40,7 +81,7 @@ def sw_fully_define(doc, relations: int, scheme: int) -> int:
     (0 = success)."""
     doc.ClearSelection2(True)
     try:
-        if not doc.Extension.SelectByID2("Point1@Origin", "EXTSKETCHPOINT", 0, 0, 0, False, 6, null_object(), 0):
+        if not sw_select_origin(doc, False, 6):
             raise ToolError("Could not select the origin as the datum", Err.SELECTION)
         return int(doc.SketchManager.FullyDefineSketch(True, True, relations, True, scheme, null_object(), scheme,
                                                        null_object(), -1, -1))

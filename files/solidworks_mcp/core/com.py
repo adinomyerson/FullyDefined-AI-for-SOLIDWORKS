@@ -59,8 +59,25 @@ def null_object():
 DOC_TYPES = {1: "Part", 2: "Assembly", 3: "Drawing"}
 
 
+# Each document's type, read once per tool call (a document's type never changes; the object is kept with it so its
+# id is not reused). Started again for every call and thread (call_token), and dropped when the call ends.
+_types = {"call": None, "map": {}}
+
+
 def doc_type(doc) -> int:
-    return int(value(doc, "GetType"))
+    if _types["call"] != call_token():
+        _types.update(call=call_token(), map={})
+    hit = _types["map"].get(id(doc))
+    if hit is not None and hit[0] is doc:
+        return hit[1]
+    kind = int(value(doc, "GetType"))
+    _types["map"][id(doc)] = (doc, kind)
+    return kind
+
+
+@at_call_end
+def _forget_types() -> None:
+    _types.update(call=None, map={})
 
 
 def doc_title(doc) -> str:
@@ -94,7 +111,9 @@ def open_documents(app):
 
 
 def plane_feature_name(plane: str) -> str:
-    """Front / Top / Right -> the standard plane name; anything else is used as given."""
+    """Front / Top / Right -> the standard plane name; anything else is used as given. No SolidWorks read: when a
+    document does not have that name (a localized template), the place that uses it asks core/planes.py and tries
+    once more."""
     text = (plane or "Front").strip()
     standard = {"front": "Front Plane", "top": "Top Plane", "right": "Right Plane"}
     return standard.get(text.lower().replace(" plane", ""), text)

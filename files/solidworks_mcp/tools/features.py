@@ -3,7 +3,7 @@
 import logging
 import math
 
-from ..core.api import Err, geometry, model, ok, plane_feature_name, sketch as sk, sw, tool, ToolError, units, value
+from ..core.api import Err, geometry, model, ok, sketch as sk, sw, tool, ToolError, units, value
 
 logger = logging.getLogger(__name__)
 

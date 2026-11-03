@@ -29,11 +29,12 @@ def create_sketch(ctx, plane="Front"):
                         f"with a feature (extrude_sketch, cut_extrude, ...).", Err.SKETCH)
     plane_name = plane_feature_name(plane)         # an unknown name is not replaced by the Front Plane
     sw.common.sw_clear_selection(doc)
-    if not sw.common.sw_select_named(doc, plane_name, "PLANE", 0, append=False):
+    selected = sw.sketches.sw_select_plane(doc, plane, 0, append=False)   # a localized template's names too
+    if selected is None:
         raise ToolError(f"Could not select a plane named '{plane_name}'. Use Front, Top, Right "
                         f"or the exact name of a plane in the feature tree.", Err.SELECTION)
     sw.sketches.sw_insert_sketch(doc)
-    return ok(f"Sketch created on {plane_name}", {"plane": plane_name})
+    return ok(f"Sketch created on {selected}", {"plane": selected})
 
 
 @tool(
@@ -163,9 +164,9 @@ def create_offset_plane(ctx, distance, reference="Front", flip=False, unit=None,
             raise ToolError("Could not select the face", Err.SELECTION)
         ref_name = f"face at ({face_x}, {face_y}, {face_z}) {unit_str}"
     else:
-        ref_name = plane_feature_name(ref_text)
-        if not sw.common.sw_select_named(doc, ref_name, "PLANE", 0, append=False):
-            raise ToolError(f"Could not select plane '{ref_name}'", Err.SELECTION)
+        ref_name = sw.sketches.sw_select_plane(doc, ref_text, 0, append=False)
+        if ref_name is None:
+            raise ToolError(f"Could not select plane '{plane_feature_name(ref_text)}'", Err.SELECTION)
 
     flags = 8 | (256 if flip else 0)               # distance constraint | flip
     plane = sw.sketches.sw_insert_offset_plane(doc, flags, distance_m)

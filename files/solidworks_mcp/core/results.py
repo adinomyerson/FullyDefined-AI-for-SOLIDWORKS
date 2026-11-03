@@ -36,6 +36,7 @@ class Err(IntEnum):
     TEMPLATE = 23
     BUSY = 24
     TIMEOUT = 25
+    VERSION = 26            # a SolidWorks older than the lowest supported version (core/connection.py)
     # the model
     SKETCH = 30
     FEATURE = 31

@@ -12,6 +12,7 @@ import pythoncom
 import win32com.client
 
 from . import units
+from . import planes
 from .com import doc_title, doc_type, plane_feature_name, value
 from .images import bmp_size, bmp_to_png
 from .results import Err, ok, ToolError
@@ -228,7 +229,13 @@ def capture(app, doc, view="current", zoom_to_fit=True, max_size=MAX_IMAGE_SIZE,
             section_plane = doc.FeatureByName(plane_name)
         except Exception:
             section_plane = None
-        if section_plane is None or value(section_plane, "GetTypeName2") != "RefPlane":
+        found = section_plane is not None and value(section_plane, "GetTypeName2") == "RefPlane"
+        localized = None if found else planes.fallback_name(doc, str(section["plane"]))
+        if localized:                                   # not there by its English name: the document's own name
+            plane_name = localized
+            section_plane = planes.typed(doc, plane_name, "RefPlane")
+            found = section_plane is not None
+        if not found:
             raise ToolError(f"No plane named '{plane_name}' for the section", Err.SELECTION)
 
     restore, bmp_path = [], None

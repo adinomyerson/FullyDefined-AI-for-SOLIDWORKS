@@ -25,13 +25,19 @@ on Antigravity. Other apps and models are your choice: they should work, but may
 - **Drawings:** standard, section and detail views, dimensions, balloons, a bill of materials with your own
   columns (material, part number), centre marks and centrelines, dimension precision, title block and sheets.
 - **Files:** STEP, STL and PDF export; custom properties (part number, description, linked mass or material).
+- **Your files are kept:** before the first change to a file you opened, a copy of it goes to `FullyDefined backups`
+  in your user folder.
+- **Any template language:** the default planes and the origin are found in any language, not only by their
+  English names (tested with renamed planes; please [report](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/issues) any language issue).
+- **Faster:** fewer requests to SolidWorks for each step, above all in sketches with many entities.
 - **Checked, not assumed:** every result is measured from the model (volume, mass, distances, faces, sketch
   status) and reported against what you asked for.
 
 ## Requirements
 
 - Windows 10 or 11.
-- SolidWorks 2026, installed, licensed and **set to English**.
+- SolidWorks 2026, installed and licensed. Tested set to English; parts and assemblies from templates in other
+  languages work too (the default planes and origin are found in any language).
 - An AI app that runs local MCP servers.
 
 Tested on SolidWorks 2026 SP4.1 (English) and Windows 11.
@@ -145,7 +151,7 @@ cannot use it: it only connects to remote servers, and this server must run on t
 
 ## Coming soon
 
-More tools, more file formats, and faster. Want something? [Open an issue](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/issues) and tell us.
+More tools and more file formats. Want something? [Open an issue](https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/issues) and tell us.
 
 ## Update
 

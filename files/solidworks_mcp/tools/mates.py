@@ -554,7 +554,7 @@ def delete_mate(ctx, name):
 
 @tool(
     group="assembly",
-    description="Step a distance or angle mate through a list of values, optionally saving a picture (named <prefix>_<number>.png) and counting interferences at each step: this is how a mechanism is moved and shown. For each value the mate is set, the assembly rebuilt and the mate errors read. The call stops by itself before max_seconds runs out and returns the values still to do, to pass on as first_index; it also stops at the first value the mates do not allow. A PUSHED chain folds if the driven point moves more than one link pitch along its track in one move: set max_change (about half the pitch) and the way between values is walked in smaller moves.",
+    description="Step a distance or angle mate through a list of values, optionally saving a picture (named <prefix>_<number>.png; an existing file is never replaced: the next free name, '<prefix>_<number> (2).png', is used and reported) and counting interferences at each step: this is how a mechanism is moved and shown. For each value the mate is set, the assembly rebuilt and the mate errors read. The call stops by itself before max_seconds runs out and returns the values still to do, to pass on as first_index; it also stops at the first value the mates do not allow. A PUSHED chain folds if the driven point moves more than one link pitch along its track in one move: set max_change (about half the pitch) and the way between values is walked in smaller moves.",
     params={"name": {"type": "string", "description": "Mate name from list_mates, e.g. 'Distance1'"},
             "values": {"type": "array", "items": {"type": "number"}, "minItems": 1,
                        "description": "Values to step through, in order (distance in unit, or degrees)"},
@@ -598,6 +598,18 @@ def step_mate(ctx, name, values, unit=None, output_folder=None, prefix=None, fir
                 capture.restore_view(ctx.doc, held)
             except Exception as e:
                 logger.debug(f"Could not put the view back: {e}")
+
+
+def _free_name(path: str) -> str:
+    """path, or when a file of that name exists, the first free 'name (2).png', 'name (3).png', ...: step_mate never
+    replaces a file."""
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    n = 2
+    while os.path.exists(f"{base} ({n}){ext}"):
+        n += 1
+    return f"{base} ({n}){ext}"
 
 
 def _step_mate(ctx, name, values, unit, output_folder, prefix, first_index, check_interference, max_seconds,
@@ -671,7 +683,7 @@ def _step_mate(ctx, name, values, unit, output_folder, prefix, first_index, chec
             raise bad("A picture larger than 1280 px is only written to a file: give output_folder")
 
     started = time.time()
-    steps, files = [], []
+    steps, files, renamed = [], [], []           # renamed: pictures written under a free name (the usual one was taken)
     last_image, longest, longest_move, on_the_way, stopped, done = None, 0.0, 0.0, None, None, 0
     for index, target_value in enumerate(values):
         if index > 0 and time.time() - started + longest * 1.3 > max_seconds:
@@ -719,7 +731,7 @@ def _step_mate(ctx, name, values, unit, output_folder, prefix, first_index, chec
             except ToolError:
                 row["interferences"] = None
         if wants_picture:
-            path = os.path.join(folder, f"{stem}_{first_index + index:03d}.png") if folder is not None else None
+            path = _free_name(os.path.join(folder, f"{stem}_{first_index + index:03d}.png")) if folder is not None else None
             try:
                 shot = capture.capture(ctx.app, asm, view=view, zoom_to_fit=False, max_size=1280, output_path=path,
                                        return_image=(return_image == "last"), keep_view=True, **picture)
@@ -729,6 +741,8 @@ def _step_mate(ctx, name, values, unit, output_folder, prefix, first_index, chec
                 if path:
                     row["file"] = path
                     files.append(path)
+                    if os.path.basename(path) != f"{stem}_{first_index + index:03d}.png":
+                        renamed.append(os.path.basename(path))
                 if shot.image:
                     last_image = shot.image
             else:
@@ -751,6 +765,8 @@ def _step_mate(ctx, name, values, unit, output_folder, prefix, first_index, chec
         message += f", now at {steps[done - 1]['value']} {unit_str}"
     if files:
         message += f"; {len(files)} picture(s) in {folder}"
+        if renamed:
+            message += f" (existing files kept: written as {', '.join(renamed)})"
     if stopped == "refused":
         data["stopped_at"] = steps[-1]["value"]
         message += f". STOPPED at {steps[-1]['value']}: {steps[-1]['message']}"

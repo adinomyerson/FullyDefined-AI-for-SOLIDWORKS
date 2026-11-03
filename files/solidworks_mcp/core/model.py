@@ -51,11 +51,17 @@ def volume_mm3(doc) -> Optional[float]:
 def tree_features(doc) -> list:
     """(name, type, feature) for every user feature in tree order."""
     rows = []
+    before_origin, planes_above = True, 0   # the standard planes: the first three reference planes above the origin
     feat = value(doc, "FirstFeature")
     while feat is not None and len(rows) < 5000:
         try:
             name, kind = feat.Name, value(feat, "GetTypeName2")
-            if kind not in TREE_SYSTEM_TYPES and name not in STANDARD_PLANES:
+            if kind == "OriginProfileFeature":
+                before_origin = False
+            if kind == "RefPlane" and before_origin:
+                planes_above += 1
+            standard = name in STANDARD_PLANES or (kind == "RefPlane" and before_origin and planes_above <= 3)
+            if kind not in TREE_SYSTEM_TYPES and not standard:
                 rows.append((name, kind, feat))
         except Exception:
             pass

@@ -2,32 +2,10 @@
 
 import logging
 import math
-from contextlib import contextmanager
 
 from ..core.api import Err, geometry, ok, sketch as sk, sw, tool, ToolError, units, value as _value
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def _no_ui_updates(app):
-    """SolidWorks refreshes its toolbars each time it goes idle between API calls; in an open sketch of a few dozen
-    entities that costs about 70 ms a call (P19: a 32-line outline took 40-70 s a dimension). CommandInProgress
-    stops it for the tool's calls; the earlier setting comes back after."""
-    try:
-        before = bool(_value(app, "CommandInProgress"))
-        app.CommandInProgress = True
-    except Exception as e:
-        logger.debug(f"Could not set CommandInProgress: {e}")
-        before = None
-    try:
-        yield
-    finally:
-        if before is not None:
-            try:
-                app.CommandInProgress = before
-            except Exception as e:
-                logger.debug(f"Could not restore CommandInProgress: {e}")
 
 # relation name -> (constraint for segments / mixed selections, constraint when only points are selected)
 RELATIONS = {
@@ -57,9 +35,34 @@ def _round_xy(ctx, point, unit):
     return [round(ctx.from_m(point.X, unit), 4) + 0.0, round(ctx.from_m(point.Y, unit), 4) + 0.0]
 
 
-def _segment_info(ctx, seg, index, unit) -> dict:
-    """One sketch segment in sketch coordinates, in the user's unit."""
-    kind = int(_value(seg, "GetType"))
+def _segment_points(seg, kind) -> dict:
+    """The segment's start, end and centre, each read once per call as (x, y, z) in metres, or None. Every helper
+    that needs them takes these: they used to read the same points three times (SPEED_BASELINE, SP2). A line has no
+    centre, so it is not asked for one."""
+    points = {}
+    for name, getter in _POINT_GETTERS.items():
+        points[name] = None
+        if kind == 0 and name == "center":
+            continue
+        try:
+            point = _value(seg, getter)
+            if point is not None:
+                points[name] = (float(point.X), float(point.Y), float(point.Z))
+        except Exception:
+            continue
+    return points
+
+
+def _xy(ctx, seg, points, name, unit):
+    """A point of the segment rounded in the user's unit, from the shared read; read again only if that failed."""
+    if points[name] is None:
+        return _round_xy(ctx, _value(seg, _POINT_GETTERS[name]), unit)
+    x, y, _ = points[name]
+    return [round(ctx.from_m(x, unit), 4) + 0.0, round(ctx.from_m(y, unit), 4) + 0.0]
+
+
+def _segment_info(ctx, seg, index, unit, kind, points) -> dict:
+    """One sketch segment in sketch coordinates, in the user's unit (kind and points read by the caller)."""
     info = {"id": index}
     try:
         info["name"] = _value(seg, "GetName")
@@ -67,8 +70,8 @@ def _segment_info(ctx, seg, index, unit) -> dict:
         pass
     if kind == 0:
         info["type"] = "line"
-        info["start"] = _round_xy(ctx, _value(seg, "GetStartPoint2"), unit)
-        info["end"] = _round_xy(ctx, _value(seg, "GetEndPoint2"), unit)
+        info["start"] = _xy(ctx, seg, points, "start", unit)
+        info["end"] = _xy(ctx, seg, points, "end", unit)
     elif kind == 1:
         is_circle = False
         try:
@@ -76,11 +79,11 @@ def _segment_info(ctx, seg, index, unit) -> dict:
         except Exception:
             pass
         info["type"] = "circle" if is_circle else "arc"
-        info["center"] = _round_xy(ctx, _value(seg, "GetCenterPoint2"), unit)
+        info["center"] = _xy(ctx, seg, points, "center", unit)
         info["radius"] = round(ctx.from_m(_value(seg, "GetRadius"), unit), 4)
         if not is_circle:
-            info["start"] = _round_xy(ctx, _value(seg, "GetStartPoint2"), unit)
-            info["end"] = _round_xy(ctx, _value(seg, "GetEndPoint2"), unit)
+            info["start"] = _xy(ctx, seg, points, "start", unit)
+            info["end"] = _xy(ctx, seg, points, "end", unit)
     else:
         info["type"] = {2: "ellipse", 3: "spline", 4: "text", 5: "parabola"}.get(kind, f"type_{kind}")
     try:
@@ -124,17 +127,28 @@ def _sketch_dimensions(ctx, sketch, unit) -> list:
     return dims
 
 
-def _free_points(ctx, sketch, segs, unit) -> list:
-    """Sketch points that are not an end or the centre of an entity (drawn with draw_point)."""
-    taken = []
-    for seg in segs:
-        for getter in _POINT_GETTERS.values():
-            try:
-                point = _value(seg, getter)
-                if point is not None:
-                    taken.append((float(point.X), float(point.Y), float(point.Z)))
-            except Exception:
-                continue
+def _dimension_count(sketch) -> int:
+    """The number of the sketch's own dimensions, walked as _sketch_dimensions walks them but reading only each
+    one's name: the text stagger needs the count, not the values."""
+    count = 0
+    try:
+        own = f"@{sketch.Name}@"
+        display = _value(sketch, "GetFirstDisplayDimension")
+        seen = 0
+        while display is not None and seen < 500:
+            seen += 1
+            if own in sw.editing.sw_display_dimension(display).FullName:
+                count += 1
+            display = sketch.GetNextDisplayDimension(display)
+    except Exception as e:
+        logger.debug(f"Could not count the dimensions: {e}")
+    return count
+
+
+def _free_points(ctx, sketch, geometry, unit) -> list:
+    """Sketch points that are not an end or the centre of an entity (drawn with draw_point). geometry: each
+    segment's _segment_points."""
+    taken = [p for points in geometry for p in points.values() if p is not None]
     free = []
     for point in list(_value(sketch, "GetSketchPoints2") or []):
         here = (float(point.X), float(point.Y), float(point.Z))
@@ -144,23 +158,18 @@ def _free_points(ctx, sketch, segs, unit) -> list:
     return free
 
 
-def _endpoint_joins(segs, entities) -> list:
+def _endpoint_joins(geometry, entities) -> list:
     """Adds "start_joins" / "end_joins" to every entity with ends: the ends of other entities at the
     same place, as "id:start" / "id:end". Returns the ends that touch nothing (construction geometry
-    is not counted as a partner and not listed)."""
+    is not counted as a partner and not listed). geometry: each segment's _segment_points."""
     ends = []           # (entity index, "start" | "end", x, y, z, construction)
-    for index, seg in enumerate(segs):
+    for index, points in enumerate(geometry):
         info = entities[index]
         if info.get("type") == "circle":
             continue
-        for which, getter in (("start", "GetStartPoint2"), ("end", "GetEndPoint2")):
-            try:
-                point = _value(seg, getter)
-                if point is not None:
-                    ends.append((index, which, float(point.X), float(point.Y), float(point.Z),
-                                 bool(info.get("construction"))))
-            except Exception:
-                continue
+        for which in ("start", "end"):
+            if points[which] is not None:
+                ends.append((index, which, *points[which], bool(info.get("construction"))))
     open_ends = []
     for index, which, x, y, z, construction in ends:
         close = [(o, ow, oc) for o, ow, ox, oy, oz, oc in ends
@@ -178,18 +187,19 @@ def _endpoint_joins(segs, entities) -> list:
     needs='any',
 )
 def list_sketch_entities(ctx, unit=None):
-    with _no_ui_updates(ctx.app):
-        return _list_sketch_entities(ctx, unit)
+    return _list_sketch_entities(ctx, unit)
 
 
 def _list_sketch_entities(ctx, unit):
     doc = ctx.doc
     sketch = sk.active_sketch(doc)
     segs = sk.segments(doc, sketch)
-    entities = [_segment_info(ctx, seg, i + 1, unit) for i, seg in enumerate(segs)]
-    open_ends = _endpoint_joins(segs, entities)
+    kinds = [int(_value(seg, "GetType")) for seg in segs]
+    geometry = [_segment_points(seg, kind) for seg, kind in zip(segs, kinds)]
+    entities = [_segment_info(ctx, seg, i + 1, unit, kinds[i], geometry[i]) for i, seg in enumerate(segs)]
+    open_ends = _endpoint_joins(geometry, entities)
     try:
-        points = _free_points(ctx, sketch, segs, unit)
+        points = _free_points(ctx, sketch, geometry, unit)
     except Exception as e:
         logger.debug(f"Could not list the sketch points: {e}")
         points = []
@@ -257,7 +267,7 @@ def _select_refs(doc, sketch, refs, ctx=None, unit=None) -> list:
             kinds.append("edge")
             continue
         if text == "origin":
-            if not sw.common.sw_select_named(doc, "Point1@Origin", "EXTSKETCHPOINT", 0):
+            if not sw.sketches.sw_select_origin(doc, True, 0):
                 fail("Could not select the sketch origin")
             kinds.append("point")
             continue
@@ -359,8 +369,7 @@ def _ref_point_gap(doc, sketch, refs):
     needs='any',
 )
 def add_sketch_relation(ctx, relation, entities, unit=None):
-    with _no_ui_updates(ctx.app):
-        return _add_sketch_relation(ctx, relation, entities, unit)
+    return _add_sketch_relation(ctx, relation, entities, unit)
 
 
 def _add_sketch_relation(ctx, relation, entities, unit):
@@ -488,8 +497,7 @@ def _add_sketch_relation(ctx, relation, entities, unit):
     needs='any',
 )
 def add_sketch_dimension(ctx, entities, value=None, unit=None, orientation="auto", more=None):
-    with _no_ui_updates(ctx.app):
-        return _add_sketch_dimension(ctx, entities, value, unit, orientation, more)
+    return _add_sketch_dimension(ctx, entities, value, unit, orientation, more)
 
 
 def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
@@ -542,27 +550,38 @@ def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
 
 def _text_place(ctx, doc, sketch, orientation):
     """Where a new dimension's text goes: just outside the sketch geometry, staggered by the dimensions there."""
+    # read again for every dimension: the one before may have moved the geometry, and with orientation auto the
+    # text's place decides what is measured. Each point once, a line's missing centre not asked for (SP2)
     xs, ys = [], []
     for seg in sk.segments(doc, sketch):
-        for getter in _POINT_GETTERS.values():
+        try:
+            kind = int(_value(seg, "GetType"))
+        except Exception:
+            kind = None
+        centre = None
+        for name, getter in _POINT_GETTERS.items():
+            if kind == 0 and name == "center":
+                continue
             try:
                 point = _value(seg, getter)
                 if point is not None:
                     xs.append(float(point.X))
                     ys.append(float(point.Y))
+                    if name == "center":
+                        centre = (xs[-1], ys[-1])
             except Exception:
                 pass
-        try:
-            if int(_value(seg, "GetType")) == 1:
-                c, r = _value(seg, "GetCenterPoint2"), float(_value(seg, "GetRadius"))
-                xs += [c.X - r, c.X + r]
-                ys += [c.Y - r, c.Y + r]
-        except Exception:
-            pass
+        if kind == 1 and centre is not None:
+            try:
+                r = float(_value(seg, "GetRadius"))
+                xs += [centre[0] - r, centre[0] + r]
+                ys += [centre[1] - r, centre[1] + r]
+            except Exception:
+                pass
     if not xs:
         xs, ys = [0.0], [0.0]
     size = max(max(xs) - min(xs), max(ys) - min(ys), 0.005)
-    gap = size * (0.15 + 0.08 * len(_sketch_dimensions(ctx, sketch, None)))   # stagger the texts
+    gap = size * (0.15 + 0.08 * _dimension_count(sketch))   # stagger the texts
     return (max(xs) + gap, (min(ys) + max(ys)) / 2) if orientation == "vertical" else \
         ((min(xs) + max(xs)) / 2, min(ys) - gap)
 

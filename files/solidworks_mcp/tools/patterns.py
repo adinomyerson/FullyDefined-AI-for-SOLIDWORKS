@@ -159,10 +159,10 @@ def linear_pattern(ctx, count, spacing, direction, features=None, unit=None, dir
     # select: features (mark 4), direction 1 (mark 1), direction 2 (mark 2)
     sw.common.sw_clear_selection(doc)
     _select_features(doc, names, 4)
-    if not sw.common.sw_select_named(doc, DIRECTION_PLANES[axis1], "PLANE", 1):
+    if sw.sketches.sw_select_plane(doc, DIRECTION_PLANES[axis1], 1) is None:
         sw.common.sw_clear_selection(doc)
         raise ToolError(f"Could not select {DIRECTION_PLANES[axis1]} as direction", Err.SELECTION)
-    if use_dir2 and not sw.common.sw_select_named(doc, DIRECTION_PLANES[axis2], "PLANE", 2):
+    if use_dir2 and sw.sketches.sw_select_plane(doc, DIRECTION_PLANES[axis2], 2) is None:
         sw.common.sw_clear_selection(doc)
         raise ToolError(f"Could not select {DIRECTION_PLANES[axis2]} as direction 2", Err.SELECTION)
 
@@ -392,9 +392,9 @@ def mirror_feature(ctx, plane, features=None, unit=None, face_x=None, face_y=Non
             raise ToolError("Could not select the mirror face", Err.SELECTION)
         plane_name = f"face at ({face_x}, {face_y}, {face_z}) {unit_str}"
     else:
-        plane_name = plane_feature_name(plane_text)
-        if not sw.common.sw_select_named(doc, plane_name, "PLANE", 2, append=False):
-            raise ToolError(f"Could not select a plane named '{plane_name}'. Use Front, Top, Right, "
+        plane_name = sw.sketches.sw_select_plane(doc, plane_text, 2, append=False)
+        if plane_name is None:
+            raise ToolError(f"Could not select a plane named '{plane_feature_name(plane_text)}'. Use Front, Top, Right, "
                             f"a plane name from the feature tree, or 'face'.", Err.SELECTION)
 
     _select_features(doc, names, 1)               # the features to mirror (mark 1)

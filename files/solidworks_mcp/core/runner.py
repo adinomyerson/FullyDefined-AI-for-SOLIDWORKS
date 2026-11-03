@@ -8,12 +8,13 @@ import logging
 import time
 import traceback
 
-from . import files, units
+from . import files, uiguard, units
 from . import com
 from .com import doc_type
 from .connection import connection
 from .registry import TOOLS, ToolDef
 from .results import SUPPORT_LINE, Err, Result, ToolError
+from . import backup                       # after the others: core/backup.py (a user's file copied at its first change)
 
 logger = logging.getLogger("solidworks_mcp.calls")
 
@@ -32,6 +33,7 @@ class Context:
     def __init__(self, tool: ToolDef):
         self.tool = tool
         self._app = None                    # checked once per call, not on every use
+        self._handoff = None                # the document the runner's own check read, for the tool's first ctx.doc
 
     @property
     def app(self):
@@ -39,11 +41,17 @@ class Context:
         if self._app is None:
             connection.connect()
             self._app = connection.app
+        self._handoff = None                # the tool used SolidWorks first: its ctx.doc reads the active document
         return self._app
 
     @property
     def doc(self):
-        """The active document, or a refusal if none is open."""
+        """The active document, or a refusal if none is open. The tool's first ctx.doc gets the document the
+        runner's check has just read, when nothing else touched SolidWorks in between (the same document: the read
+        is saved); every later one reads it again."""
+        handed, self._handoff = self._handoff, None
+        if handed is not None:
+            return handed
         doc = self.app.ActiveDoc
         if doc is None:
             raise ToolError("There is no document open. Make one (create_new_part, create_new_assembly) or open one (open_document).", Err.NO_DOCUMENT)
@@ -75,11 +83,13 @@ def _check_needs(ctx: Context, tool: ToolDef) -> None:
     doc = ctx.doc
     wanted = _NEEDS_TYPES.get(tool.needs)
     if wanted is None:
+        ctx._handoff = doc
         return
     kind = doc_type(doc)
     if kind not in wanted:
         raise ToolError(f"{tool.name} works on {_WANTED[tool.needs]}, but the active document is "
                         f"{_KIND.get(kind, 'not a part')}. {_OPEN_FIRST[tool.needs]}", Err.INPUT)
+    ctx._handoff = doc
 
 
 def _clear_selection() -> None:
@@ -122,11 +132,37 @@ def _unknown_inputs(name: str, unknown: list, accepted: set) -> ToolError:
                      {"unknown": unknown, "inputs": sorted(accepted)})
 
 
+class GuardedContext(Context):
+    """The Context of a tool call: the first time the call reaches SolidWorks, SolidWorks' toolbar refresh is held
+    off for the rest of the call (core/uiguard.py; run() puts the setting back)."""
+
+    _guarded = False
+
+    @property
+    def app(self):
+        app = Context.app.fget(self)
+        if not self._guarded:
+            self._guarded = True
+            uiguard.enter(app)
+        return app
+
+
 def run(name: str, arguments: dict) -> Result:
+    """One tool call (_run_call), and afterwards SolidWorks' CommandInProgress put back as the call found it,
+    whatever happened: success, refusal, an error, a call that ended after its time limit."""
+    depth = uiguard.depth()
+    try:
+        return _run_call(name, arguments)
+    finally:
+        uiguard.unwind(depth)
+
+
+def _run_call(name: str, arguments: dict) -> Result:
     tool = TOOLS[name]
     args = dict(arguments or {})
     t0 = time.time()
     com.call_number[0] += 1
+    ctx = None
     try:
         units.check(args.get("unit"))           # on every tool, as before, even one without a unit input
         if "unit" in args and "unit" not in tool.accepted:
@@ -137,11 +173,12 @@ def run(name: str, arguments: dict) -> Result:
         missing = [key for key in tool.required_args if args.get(key) is None]     # an explicit null is no value
         if missing:
             raise _missing_inputs(tool, missing)
-        ctx = Context(tool)
+        ctx = GuardedContext(tool)
         for key in tool.writes:                 # file safety: never write under protected_paths
             if args.get(key):
                 files.check_writable(args[key])
         _check_needs(ctx, tool)
+        backup.before(ctx, tool, args)          # before a saving tool: the user's changed files copied first
         result = tool.func(ctx, **args)
         if not isinstance(result, Result):
             raise TypeError(f"{name} returned {type(result).__name__}, not a Result")
@@ -151,6 +188,7 @@ def run(name: str, arguments: dict) -> Result:
         logger.error(f"{name} raised:\n{traceback.format_exc()}")
         result = Result(False, f"Internal error in {name} (see log): {type(e).__name__}: {e}\n\n{SUPPORT_LINE}",
                         Err.INTERNAL)
+    result = backup.after(result, tool, args, ctx)     # a user's file copied at its first change, said once
     if result.success and tool.clears_selection:
         _clear_selection()
     com.end_call()                              # nothing read in this call is reused by the next

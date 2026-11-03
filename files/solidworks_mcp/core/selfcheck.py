@@ -16,6 +16,7 @@ from .registry import load_errors
 logger = logging.getLogger(__name__)
 
 TESTED_MAJOR = 34                 # RevisionNumber 34.x = SolidWorks 2026
+# the lowest supported: connection.MIN_MAJOR (below it every SolidWorks call is refused)
 TESTED_LANGUAGE = "english"
 
 _checked_pid = None               # the SolidWorks process already checked
@@ -51,12 +52,18 @@ def solidworks(app, pid=None) -> List[str]:
         major = int(revision.split(".")[0])
     except ValueError:
         major = None
-    if major != TESTED_MAJOR:
+    from .connection import MIN_MAJOR, year_of
+    if major is not None and major < MIN_MAJOR:
+        warnings.append(f"SolidWorks revision {revision} (SolidWorks {year_of(major)}) is older than "
+                        f"SolidWorks {year_of(MIN_MAJOR)}, the lowest this server supports: every SolidWorks call "
+                        f"is refused.")
+    elif major != TESTED_MAJOR:
         warnings.append(f"SolidWorks revision {revision} is not SolidWorks 2026 (revision {TESTED_MAJOR}.x), the "
                         f"version this server is tested on; some tools may behave differently.")
     if language.lower() != TESTED_LANGUAGE:
         warnings.append(f"SolidWorks runs in {language}, not English, the language this server is tested on; "
-                        f"names such as 'Front Plane' or 'Sketch1' may differ.")
+                        f"names such as 'Sketch1' may differ (the standard planes and the origin are found in any "
+                        f"language).")
     for w in warnings:
         logger.warning(w)
     return warnings

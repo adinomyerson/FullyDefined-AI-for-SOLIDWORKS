@@ -16,6 +16,7 @@ import pythoncom
 import win32com.client
 
 from . import units
+from . import planes
 from .com import null_object, plane_feature_name, value
 from .geometry import PICK_TOLERANCE_M, edge_geometry, face_geometry, point_in_unit, points_to_m
 from .results import Err, ToolError
@@ -647,6 +648,7 @@ def resolve_reference(asm, ref, index: int, unit) -> Dict:
 
     if what in ("plane", "axis"):
         name = str(ref[what]).strip()
+        text = name
         if what == "plane":
             name = plane_feature_name(name)
         wanted_type = "RefPlane" if what == "plane" else "RefAxis"
@@ -656,7 +658,12 @@ def resolve_reference(asm, ref, index: int, unit) -> Dict:
             feat = owner.FeatureByName(name)
         except Exception as e:
             logger.debug(f"FeatureByName({name}) failed: {e}")
-        if feat is None or value(feat, "GetTypeName2") != wanted_type:
+        found = feat is not None and value(feat, "GetTypeName2") == wanted_type
+        localized = None if found or what != "plane" else planes.fallback_name(owner, text, component=comp is not None)
+        if localized:                                   # not there by its English name: the model's own name
+            name, feat = localized, planes.typed(owner, localized, wanted_type)
+            found = feat is not None
+        if not found:
             listed = []
             try:
                 walk = value(owner, "FirstFeature")
@@ -674,10 +681,11 @@ def resolve_reference(asm, ref, index: int, unit) -> Dict:
         text = f"{feat.Name} of {comp.Name2}" if comp is not None else f"assembly {feat.Name}"
         return {"kind": what, "component": comp, "feature": feat, "info": info, "text": text}
 
-    select_name, at = "Point1@Origin", (0.0, 0.0, 0.0)                       # origin
+    select_name, at, suffix = "Point1@Origin", (0.0, 0.0, 0.0), ""             # origin
     if comp is not None:
         try:
-            select_name += "@" + str(value(comp, "GetSelectByIDString"))
+            suffix = "@" + str(value(comp, "GetSelectByIDString"))
+            select_name += suffix
         except Exception as e:
             logger.debug(f"GetSelectByIDString failed: {e}")
             raise bad(f"could not address the origin of {comp.Name2}", Err.SELECTION)
@@ -686,7 +694,8 @@ def resolve_reference(asm, ref, index: int, unit) -> Dict:
     if comp is not None:
         info["component"] = str(comp.Name2)
     text = f"origin of {comp.Name2}" if comp is not None else "assembly origin"
-    return {"kind": "origin", "component": comp, "select_name": select_name, "info": info, "text": text,
+    return {"kind": "origin", "component": comp, "select_name": select_name, "select_suffix": suffix, "info": info,
+            "text": text,
             "point_m": tuple(at)}
 
 
@@ -699,8 +708,13 @@ def select_reference(asm, resolved: Dict, mark: int = 1) -> bool:
             return bool(resolved["entity"].Select4(True, select_data))
         if "feature" in resolved:
             return bool(resolved["feature"].Select2(True, mark))
-        return bool(asm.Extension.SelectByID2(resolved["select_name"], "EXTSKETCHPOINT", 0, 0, 0, True, mark,
-                                              null_object(), 0))
+        if asm.Extension.SelectByID2(resolved["select_name"], "EXTSKETCHPOINT", 0, 0, 0, True, mark, null_object(), 0):
+            return True
+        comp = resolved.get("component")                # not there by its English name: the model's own origin
+        localized = planes.fallback_origin_point(comp if comp is not None else asm, component=comp is not None)
+        return bool(localized) and bool(asm.Extension.SelectByID2(localized + resolved.get("select_suffix", ""),
+                                                                   "EXTSKETCHPOINT", 0, 0, 0, True, mark,
+                                                                   null_object(), 0))
     except Exception as e:
         logger.debug(f"Could not select the {resolved.get('text')}: {e}")
         return False
