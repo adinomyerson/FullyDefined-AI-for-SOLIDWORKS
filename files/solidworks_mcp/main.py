@@ -6,6 +6,10 @@ core.runner.
 import base64
 import logging
 
+from .core import headless
+
+headless.install()                      # off Windows: stand-ins, so the tool list loads (core/headless.py)
+
 from .core import log
 
 log.setup()
@@ -80,6 +84,8 @@ async def call_tool(name: str, arguments: dict) -> list:
     lock that keeps other server processes (other chats) out meanwhile (core/lock.py)."""
     if name not in TOOLS:
         return _capped(name, _content(Result(False, f"Unknown tool: {name}", Err.INPUT)))
+    if headless.active():                                        # not Windows: no tool can run here
+        return _content(headless.refusal().result())
     group = group_of(name)
     if not groups.is_on(group):
         return _content(groups.refusal(name, group).result())
