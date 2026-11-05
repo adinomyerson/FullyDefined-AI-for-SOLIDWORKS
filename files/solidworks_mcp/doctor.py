@@ -316,7 +316,7 @@ def check_solidworks(r: Report, attach=running_solidworks, new_part=new_part_fac
     from .core.com import value
     registered = registered_solidworks()
     r.row("Registered", registered or "not found", None if registered else "SolidWorks is not registered",
-          "Install SolidWorks 2026, or repair the installation.")
+          "Install SolidWorks 2022 or later, or repair the installation.")
     app = attach()
     if app is None:
         r.row("Running", "no (start SolidWorks and run doctor again to check its version, language and planes)")
@@ -344,10 +344,10 @@ def check_solidworks(r: Report, attach=running_solidworks, new_part=new_part_fac
         r.row("Part template", f"{info.get('file')}: {info.get('unit_system')}, {info.get('length_unit')}, "
                                f"{info.get('standard')} (kept as is: the tools convert units themselves)")
         names = facts["planes"]
-        missing = [p for p in PLANES if p not in names]
+        missing = [] if len(names) >= 3 else [p for p in PLANES if p not in names]
         r.row("Planes", ", ".join(names) or "none",
               f"missing {', '.join(missing)}" if missing else None,
-              "The tools look for the English plane names. Use an English part template, or SolidWorks in English.")
+              "The tools need the three standard planes. Use a part template that has them.")
     except Exception as e:
         r.row("Planes", f"not checked: {e}", "a new part could not be made", "Close any open SolidWorks dialog.")
     finally:

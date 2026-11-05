@@ -17,7 +17,8 @@ from typing import Any, Dict, Optional
 # The end of every unexpected internal error (a tool that crashed), never of an ordinary refusal.
 SUPPORT_LINE = ("This is a bug in the SolidWorks MCP server, not something you did. Please run "
                 "`solidworks-mcp doctor` (or `python -m solidworks_mcp doctor` in the server's folder) and send "
-                "the report it writes, with what you asked, to the contact in the README's Support section.")
+                "the report it writes, with what you asked, as a new issue on the project's GitHub Issues page: "
+                "https://github.com/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/issues")
 
 
 class Err(IntEnum):

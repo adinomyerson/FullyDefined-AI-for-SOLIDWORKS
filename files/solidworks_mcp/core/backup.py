@@ -54,7 +54,8 @@ from .results import Err, Result, ToolError
 logger = logging.getLogger(__name__)
 
 # AUTO-SAVE RULE: anything that saves a document without a tool call of its own (an auto-save, a save after every
-# feature) must first call before() for that save, or add itself to SAVING_TOOLS, so the user's changed files are
+# feature) must first call before() for that save, or add itself to SAVING_TOOLS, or (core/autosave.py, after after())
+# save only when may_save() says so and report the save with saved_by_server(), so the user's changed files are
 # copied while they are still the original. A save that skips this loses the original with no copy.
 FOLDER_NAME = "FullyDefined backups"
 NOT_REPLACED = ("Couldn't back up {file}, so I didn't replace it. Save under a new name, or free space / check "
@@ -78,6 +79,7 @@ _docs = {}                  # key (normalised path, or ("untitled", title)) -> e
 _written = set()            # normalised paths the server's tools created
 _calls = []                 # per running call: {"existed": written paths that existed, "copied": [entries], "times": {}}
 _suspect = {"since_failure": False}     # a changing call failed: the next save copies every uncopied user file
+_active = {"n": None, "doc": None, "entry": None}   # the document after() registered (core/autosave.py)
 
 
 def folder() -> Path:
@@ -382,6 +384,7 @@ def after(result: Result, tool=None, args: dict = None, ctx=None) -> Result:
         except Exception as e:
             logger.debug(f"backup: could not register the document: {e}")
             return result
+        _active.update(n=com.call_number[0], doc=doc, entry=entry)
         if entry is None or entry["kind"] not in ("user", "unsaved"):
             return result
         _refresh(entry)
@@ -401,6 +404,45 @@ def after(result: Result, tool=None, args: dict = None, ctx=None) -> Result:
         return result
 
 
+def changes(tool) -> bool:
+    """A successful call of this tool changes the document it ran on (not read-only, not a saving tool)."""
+    return _changes(tool)
+
+
+def active_this_call():
+    """(document, entry) that after() registered in the running call, or (None, None): no SOLIDWORKS read."""
+    with _lock:
+        if _active["n"] != com.call_number[0]:
+            return None, None
+        return _active["doc"], _active["entry"]
+
+
+def may_save(entry: dict) -> Optional[str]:
+    """None when a save in place by the server itself (an auto-save) keeps the copy-first rule for this document;
+    else why not, in plain words. A user's file is saved over only once its original is copied and that copy is still
+    on disk."""
+    with _lock:
+        if entry is None or not entry.get("path"):
+            return "it has no file yet"
+        if entry["kind"] == "user":
+            _refresh(entry)
+            if not entry["backup"]:
+                return f"no backup of your original {entry['path']} could be made, so it is not saved over"
+            if not os.path.isfile(entry["backup"]):         # never saved over before its copy exists
+                return f"the backup of your original ({entry['backup']}) is no longer on disk, so it is not saved over"
+        return None
+
+
+def saved_by_server(entry: dict, also_written: str = None) -> None:
+    """After a save in place outside the saving tools (an auto-save): the file's new time is the server's own save,
+    not the user's; also_written (a versioned copy) is the server's output."""
+    with _lock:
+        if entry is not None and entry["kind"] == "user":
+            entry.update(mtime=_mtime(entry["path"]), server_changed=False)
+        if also_written:
+            _written.add(_norm(also_written))
+
+
 def _mark_touched(tool, ctx) -> None:
     """A failed call of a tool that changes documents and reached SolidWorks: a document may be half-changed in a way
     the flag does not show. Nothing is read here (a refusal touches nothing): the next save copies every open user
@@ -416,3 +458,4 @@ def forget() -> None:
         _written.clear()
         _calls.clear()
         _suspect["since_failure"] = False
+        _active.update(n=None, doc=None, entry=None)

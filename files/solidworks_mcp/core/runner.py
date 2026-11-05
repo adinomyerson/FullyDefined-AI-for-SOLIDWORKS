@@ -15,6 +15,7 @@ from .connection import connection
 from .registry import TOOLS, ToolDef
 from .results import SUPPORT_LINE, Err, Result, ToolError
 from . import backup                       # after the others: core/backup.py (a user's file copied at its first change)
+from . import autosave                     # after backup: core/autosave.py (save after a change; the copy-first rule)
 
 logger = logging.getLogger("solidworks_mcp.calls")
 
@@ -189,6 +190,7 @@ def _run_call(name: str, arguments: dict) -> Result:
         result = Result(False, f"Internal error in {name} (see log): {type(e).__name__}: {e}\n\n{SUPPORT_LINE}",
                         Err.INTERNAL)
     result = backup.after(result, tool, args, ctx)     # a user's file copied at its first change, said once
+    result = autosave.after(result, tool, args, ctx)   # then the changed document saved, when it has a file
     if result.success and tool.clears_selection:
         _clear_selection()
     com.end_call()                              # nothing read in this call is reused by the next

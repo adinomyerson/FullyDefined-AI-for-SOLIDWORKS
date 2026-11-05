@@ -11,6 +11,7 @@ What is here:
   sketch, selecting, images,    tree; faces and edges; the open sketch; picking faces; BMP to PNG;
   install, settings             where SolidWorks is installed; the settings
   planes                        the standard planes and the origin by geometry and type, in any language
+  dimensions                    dimension values and configurations: where a value goes, write, read, put back
   sw                            the SolidWorks calls that change a model, by area (sw.drawing.sw_finish ...)
   connection                    the one SolidWorks connection (connect, alive, app)
   load_errors()                 tool modules that failed to load, {module: error}
@@ -18,7 +19,7 @@ What is here:
 """
 
 from ..version import __version__ as SERVER_VERSION
-from . import assembly, capture, document, drawing, files, geometry, groups, images, install, knowhow, model, planes, selecting, settings, sketch, sw, units
+from . import assembly, capture, dimensions, document, drawing, files, geometry, groups, images, install, knowhow, model, planes, selecting, settings, sketch, sw, units
 from .com import (DOC_TYPES, byref_int, doc_path, doc_title, doc_type, null_object, open_documents,
                   plane_feature_name, same_path, value)
 from .connection import connection
@@ -34,7 +35,7 @@ API_VERSION = 1
 __all__ = [
     "API_VERSION", "SERVER_VERSION",
     "tool", "ok", "ToolError", "Err", "Context", "registered_tools", "load_errors",
-    "units", "model", "geometry", "sketch", "selecting", "images", "install", "settings", "connection", "files", "assembly", "capture", "document", "drawing", "groups", "knowhow", "planes", "sw",
+    "units", "model", "geometry", "sketch", "selecting", "images", "install", "settings", "connection", "files", "assembly", "capture", "dimensions", "document", "drawing", "groups", "knowhow", "planes", "sw",
     "value", "byref_int", "null_object", "doc_title", "doc_type", "doc_path", "same_path",
     "open_documents", "plane_feature_name", "DOC_TYPES", "bmp_size", "bmp_to_png", "log_path",
 ]

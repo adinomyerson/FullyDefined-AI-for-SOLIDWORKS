@@ -3,7 +3,7 @@
 import logging
 import math
 
-from ..core.api import assembly, doc_type, Err, model, ok, sketch as sk, tool, ToolError, units, value as com_value
+from ..core.api import assembly, dimensions, doc_type, Err, model, ok, sketch as sk, tool, ToolError, units, value as com_value
 from ..core.api import sw
 
 logger = logging.getLogger(__name__)
@@ -112,16 +112,18 @@ def list_dimensions(ctx, feature=None, unit=None):
 
 @tool(
     group="features",
-    description="Change a dimension by name and rebuild the model. Works on sketch dimensions and feature dimensions (depths, pattern spacing, fillet radius, ...). If the new value breaks a feature on rebuild, the old value is restored and the call fails. A size the tools dimensioned from the drawing (DrawnN) becomes the user's when set: it is renamed (the result says to what). A dimension an equation drives is refused, naming the equation (change it with set_equation).",
+    description="Change a dimension by name and rebuild the model. Works on sketch dimensions and feature dimensions (depths, pattern spacing, fillet radius, ...). If the new value breaks a feature on rebuild, the old value is restored and the call fails. A size the tools dimensioned from the drawing (DrawnN) becomes the user's when set: it is renamed (the result says to what). A dimension an equation drives is refused, naming the equation (change it with set_equation). With more than one configuration, configurations is required: without it the call is refused, listing them.",
     params={'name': {'type': 'string',
               'description': "Dimension name from list_dimensions, e.g. 'D1@Sketch1'"},
      'value': {'type': 'number', 'description': 'New value (length in unit, degrees for an angle, or a whole number for a pattern count)'},
-     'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'}},
+     'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'},
+     'configurations': {'type': 'array', 'items': {'type': 'string'},
+                        'description': 'Configuration names to change, or ["all"]. Needed when the model has more than one configuration; with one, leave it out.'}},
     required=['name', 'value'],
     needs='any',
     clears_selection=True,
 )
-def set_dimension(ctx, name, value, unit=None):
+def set_dimension(ctx, name, value, unit=None, configurations=None):
     doc = ctx.doc
     try:
         if doc.SketchManager.ActiveSketch is not None:
@@ -147,9 +149,11 @@ def set_dimension(ctx, name, value, unit=None):
     kind = int(com_value(dim, "GetType"))
     angular, count = kind == ANGLE, kind == COUNT
 
-    def read():
-        raw = float(dim.SystemValue)
+    def shown(raw):
         return round(math.degrees(raw), 4) if angular else int(round(raw)) if count else round(ctx.from_m(raw, unit), 4)
+
+    def read():
+        return shown(float(dim.SystemValue))
 
     if int(dim.DrivenState) == 1:
         driver = _driven_by(sw.equations.sw_equation_texts(doc), text)      # S3.1: an equation makes it driven
@@ -159,7 +163,11 @@ def set_dimension(ctx, name, value, unit=None):
         raise ToolError(f"{text} is a driven (reference) dimension and cannot be set. "
                         f"Its value is {read()}{'deg' if angular else '' if count else unit_str}.", Err.INPUT)
 
-    old_value, old_system = read(), float(dim.SystemValue)
+    owner = dimensions.owner(ctx.app, doc, text)      # a component's dimension has the part's configurations
+    plan = dimensions.where(owner, configurations)    # refused here, before any change, when it must be said which
+    active_only = plan == dimensions.ACTIVE
+    saved = dimensions.values(dim, plan)
+    old_value = read()
     volume_before = model.volume_mm3(doc)
     errors_before = model.error_keys(doc)                           # an old broken feature is not this change's
     try:
@@ -176,7 +184,7 @@ def set_dimension(ctx, name, value, unit=None):
     if not angular and new_system <= 0:
         raise ToolError("A length must be positive", Err.INPUT)
 
-    code = sw.editing.sw_set_dimension_value(dim, new_system)
+    code = dimensions.set_value(dim, new_system, plan)
     if code != 0:
         raise ToolError(f"SolidWorks refused the value for {text} (code {code})", Err.FEATURE,
                         {"name": text, "value": old_value})
@@ -191,7 +199,7 @@ def set_dimension(ctx, name, value, unit=None):
 
     # a value that breaks the model is rolled back (a failed rebuild counts only when the model was clean before)
     if problems or (not rebuilt_ok and not errors_before):
-        sw.editing.sw_set_dimension_value(dim, old_system)
+        dimensions.restore(dim, saved, plan)
         model.rebuild(doc)
         data["rebuild_errors"] = problems
         data["new_value"] = read()
@@ -200,10 +208,11 @@ def set_dimension(ctx, name, value, unit=None):
                         f"The value was put back to {old_value}{shown_unit}.", Err.FEATURE, data)
 
     # an equation drives it: SolidWorks puts the equation's value back on rebuild and reports no error (S3.1)
-    if abs(data["new_value"] - number) > max(1e-4, 1e-6 * abs(number)):
+    now = {c: shown(v) for c, v in dimensions.values(dim, plan).items()}
+    if any(abs(v - number) > max(1e-4, 1e-6 * abs(number)) for v in now.values()):
         driver = _driven_by(sw.equations.sw_equation_texts(doc), text)
-        if abs(data["new_value"] - old_value) > max(1e-4, 1e-6 * abs(old_value)):
-            sw.editing.sw_set_dimension_value(dim, old_system)
+        if any(abs(now[c] - shown(saved[c])) > max(1e-4, 1e-6 * abs(shown(saved[c]))) for c in now):
+            dimensions.restore(dim, saved, plan)
             model.rebuild(doc)
         data["new_value"] = read()
         why = (f"the equation {driver} drives it: change that with set_equation" if driver else
@@ -223,7 +232,18 @@ def set_dimension(ctx, name, value, unit=None):
         data["rename_failed"] = True
         note = (f". WARNING: {text} could not be renamed: it still gives way to a conflicting relation or dimension "
                 f"added later")
-    return ok(f"{text}: {old_value}{shown_unit} -> {data['new_value']}{shown_unit}, model rebuilt{note}", data)
+    if active_only:
+        return ok(f"{text}: {old_value}{shown_unit} -> {data['new_value']}{shown_unit}, model rebuilt{note}", data)
+    # rebuilt and measured in the active configuration only: the others are named, not assumed
+    active = dimensions.active_name(owner)
+    data["configurations"] = now
+    data["old_values"] = {c: shown(v) for c, v in saved.items()}
+    data["active_configuration"] = active
+    data["not_rebuild_checked"] = [c for c in now if c != active]
+    checked = (f"Rebuild-checked in {active} only; {', '.join(data['not_rebuild_checked'])} "
+               f"{'was' if len(data['not_rebuild_checked']) == 1 else 'were'} not rebuild-checked."
+               if data["not_rebuild_checked"] else f"Rebuild-checked in {active}.")
+    return ok(f"{text} = {number}{shown_unit} in {plan.text()}{note}. {checked}", data)
 
 
 @tool(

@@ -64,7 +64,7 @@ def measure_part(ctx, unit=None):
             guard += 1
             if value(feat, "GetTypeName2") == "MaterialFolder":
                 name = feat.Name
-                data["material"] = None if "not specified" in name.lower() else name
+                data["material"] = None if "not specified" in name.lower() or name.rstrip().endswith(">") else name
                 break
             feat = value(feat, "GetNextFeature")
     except Exception:

@@ -31,6 +31,9 @@ Do not register the server with Gemini CLI.
 .PARAMETER NoAntigravityCli
 Do not register the server with Antigravity (the app and the CLI share one file).
 
+.PARAMETER NoVSCode
+Do not register the server with VS Code (GitHub Copilot).
+
 .PARAMETER NoPath
 Do not put the solidworks-mcp command on your PATH.
 
@@ -79,6 +82,7 @@ param(
     [switch]$NoClaudeCode,
     [switch]$NoGeminiCli,
     [switch]$NoAntigravityCli,
+    [switch]$NoVSCode,
     [switch]$NoPath,
     [switch]$Check,
     [switch]$NoCheck,
@@ -346,6 +350,11 @@ function Unregister-AppsEntry([string]$installDir) {
     return $true
 }
 
+# The Start menu shortcut the .exe adds. Its name holds an en dash; this file stays plain ASCII.
+function Get-StartShortcut {
+    return Join-Path ([Environment]::GetFolderPath('Programs')) "FullyDefined $([char]0x2013) Getting started.url"
+}
+
 # Never delete or replace a folder that is not this program's install: a mistyped -InstallDir must do no harm.
 function Test-OurInstall([string]$installDir) {
     $marker = Join-Path $installDir 'app\pyproject.toml'
@@ -469,6 +478,13 @@ function Invoke-Install {
         $lines | ForEach-Object { Write-Host "    $_" }
         $summary['Antigravity'] = Get-Outcome $lines
     }
+    # VS Code (GitHub Copilot): its user mcp.json, made if it has never been opened
+    if (-not $NoVSCode) {
+        Write-Step "VS Code (GitHub Copilot)"
+        $lines = @(& $python -m solidworks_mcp.apps register --app vscode --install-dir $InstallDir @forceArg)
+        $lines | ForEach-Object { Write-Host "    $_" }
+        $summary['VS Code'] = Get-Outcome $lines
+    }
 
     # 9. Other apps
     Write-Step "Other AI apps that run local MCP servers: add this to their MCP config"
@@ -520,7 +536,8 @@ function Invoke-Install {
     # The summary
     Write-Step "Summary"
     $versions = @{ 'Claude Desktop' = (Get-AppVersion 'Claude' 'Claude'); 'Claude Code' = (Get-AppVersion 'Claude Code*');
-                   'Antigravity' = (Get-AppVersion '*Antigravity*'); 'Gemini CLI' = '' }
+                   'Antigravity' = (Get-AppVersion '*Antigravity*'); 'Gemini CLI' = '';
+                   'VS Code' = (Get-AppVersion 'Microsoft Visual Studio Code*') }
     foreach ($app in $summary.Keys) {
         $v = $versions[$app]; $label = if ($v -and $summary[$app] -like 'registered*') { "$app $v" } else { $app }
         if ($summary[$app] -like 'registered*') { Write-Ok "$($label): $($summary[$app])" } else { Write-Note "$($label): $($summary[$app])" }
@@ -542,6 +559,7 @@ function Invoke-Install {
     }
     if ($summary['Claude Code'] -like 'registered*') { $next += "Claude Code: start a new session" }
     if ($summary['Gemini CLI'] -like 'registered*') { $next += "Gemini CLI: start a new session" }
+    if ($summary['VS Code'] -like 'registered*') { $next += "VS Code: open Copilot Chat in Agent mode; 'solidworks' is under Configure Tools" }
     if ($summary['Antigravity'] -like 'registered*') { $next += "Antigravity: Settings > Customizations > Installed MCP Servers > Refresh (or open it, if it is new)" }
     Write-Host ""
     foreach ($n in $next) { Write-Host "Next: $n" }
@@ -572,11 +590,12 @@ function Invoke-Uninstall {
     Write-Step "Claude Code"
     Unregister-ClaudeCode -InstallDir $InstallDir -Force:$Force
 
-    Write-Step "Gemini CLI and Antigravity"
+    Write-Step "Gemini CLI, Antigravity and VS Code"
     if (Test-Path $python) {
         $forceArg = @(); if ($Force) { $forceArg = @('--force') }
         & $python -m solidworks_mcp.apps unregister --app gemini --install-dir $InstallDir @forceArg
         & $python -m solidworks_mcp.apps unregister --app antigravity --install-dir $InstallDir @forceArg
+        & $python -m solidworks_mcp.apps unregister --app vscode --install-dir $InstallDir @forceArg
     } else {
         Write-Note "the program's Python is missing: remove the '$ServerName' entry from .gemini\settings.json and .gemini\config\mcp_config.json by hand if there is one"
     }
@@ -586,6 +605,7 @@ function Invoke-Uninstall {
 
     Write-Step "Windows Installed apps"
     if (Unregister-AppsEntry $InstallDir) { Write-Ok "entry removed" } else { Write-Ok "nothing to remove" }
+    Remove-Item -LiteralPath (Get-StartShortcut) -Force -ErrorAction SilentlyContinue
 
     Write-Step "Program folder"
     if ($isOurs) {

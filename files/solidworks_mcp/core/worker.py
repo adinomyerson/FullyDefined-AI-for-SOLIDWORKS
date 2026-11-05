@@ -27,6 +27,15 @@ from .connection import connection
 logger = logging.getLogger(__name__)
 
 
+def _autosaving():
+    """The file an auto-save is writing now (core/autosave.py), or None."""
+    try:
+        from . import autosave
+        return autosave.saving()
+    except Exception:
+        return None
+
+
 class WorkerError(Exception):
     """The call did not run to the end: busy, timed out, or waiting on a dialog."""
 
@@ -115,15 +124,28 @@ class Worker:
                 if running >= check_after:
                     found = self._dialogs()
                     if found:
+                        saving = _autosaving()
                         self._abandon(future, job, "a dialog is open")
+                        if saving:
+                            raise WorkerError(
+                                f"{name} made its change (do not repeat it); the auto-save of {saving} is waiting on "
+                                f"a dialog: {dialogs.describe(found)}. Answer or close it in SolidWorks; until then "
+                                f"other calls are refused.", Err.BUSY,
+                                {"dialogs": [d["title"] for d in found], "change_made": True, "auto_save": saving})
                         raise WorkerError(
                             f"SolidWorks is waiting on a dialog: {dialogs.describe(found)}. Answer or close it in "
                             f"SolidWorks. {name} is still waiting for it; until it ends, other calls are refused.",
                             Err.BUSY, {"dialogs": [d["title"] for d in found]})
                 if running >= limit:
+                    saving = _autosaving()
                     self._abandon(future, job, "time limit")
                     found = self._dialogs()
                     note = f" SolidWorks shows: {dialogs.describe(found)}." if found else ""
+                    if saving:
+                        raise WorkerError(
+                            f"{name} made its change (do not repeat it), but the auto-save of {saving} did not finish "
+                            f"within {limit:.0f} s.{note} It may still be saving; other calls are refused until it "
+                            f"ends.", Err.TIMEOUT, {"limit_s": limit, "change_made": True, "auto_save": saving})
                     raise WorkerError(
                         f"{name} did not finish within {limit:.0f} s and was given up on.{note} It may still be "
                         f"running in SolidWorks; other calls are refused until it ends.",

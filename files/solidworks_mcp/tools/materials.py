@@ -75,7 +75,7 @@ def _current_material(doc):
         while feat is not None and guard < 60:
             guard += 1
             if value(feat, "GetTypeName2") == "MaterialFolder":
-                return None if "not specified" in feat.Name.lower() else feat.Name
+                return None if "not specified" in feat.Name.lower() or feat.Name.rstrip().endswith(">") else feat.Name
             feat = value(feat, "GetNextFeature")
     except Exception:
         pass

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @tool(
     group="sketch",
-    description="Start a sketch on one of the model's planes: Front, Top, Right, or another plane by name (for example 'Plane1' made by create_offset_plane). Refused while another sketch is open.",
+    description="Start a sketch on one of the model's planes: Front, Top, Right (the standard planes, in any language), or another plane by name (for example 'Plane1' made by create_offset_plane). Refused while another sketch is open.",
     params={'plane': {'type': 'string',
                'default': 'Front',
                'description': 'Front, Top, Right, or the exact name of a plane in the feature tree'}},

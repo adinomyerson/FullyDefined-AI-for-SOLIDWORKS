@@ -2,8 +2,8 @@
 Registering the installed server with AI apps. setup.ps1 calls this with the
 installed Python, so the config editing is tested offline instead of living in PowerShell.
 
-    python -m solidworks_mcp.apps register   --install-dir DIR [--force] [--app claude-desktop|gemini|antigravity]
-    python -m solidworks_mcp.apps unregister --install-dir DIR [--force] [--app claude-desktop|gemini|antigravity]
+    python -m solidworks_mcp.apps register   --install-dir DIR [--force] [--app claude-desktop|gemini|antigravity|vscode]
+    python -m solidworks_mcp.apps unregister --install-dir DIR [--force] [--app claude-desktop|gemini|antigravity|vscode]
     python -m solidworks_mcp.apps snippet    --install-dir DIR
 
 Only the server entry named "solidworks" is touched, and only when it is ours: its command lies under the install
@@ -16,6 +16,7 @@ Gemini CLI reads <home>\\.gemini\\settings.json, home being GEMINI_CLI_HOME or t
 mcpServers block. That file may hold comments, which a rewrite would lose: such a file is left alone, with the
 block to add by hand. Antigravity, the app and its CLI (agy, which replaced Gemini CLI for Google AI Pro), read
 <profile>\\.gemini\\config\\mcp_config.json, the same block; the same rules apply.
+VS Code (GitHub Copilot) reads %APPDATA%\\Code\\User\\mcp.json, whose block is "servers"; the same rules apply.
 """
 
 import argparse
@@ -90,18 +91,25 @@ def claude_code_config(env=None) -> str:
     return os.path.join(folder, ".claude.json")
 
 
+def vscode_config(env=None) -> str:
+    """VS Code's user MCP file (GitHub Copilot's agent mode uses it): <user data>\\User\\mcp.json, as its own
+    --add-mcp writes it."""
+    env = os.environ if env is None else env
+    return os.path.join(env.get("APPDATA", ""), "Code", "User", "mcp.json")
+
+
 def app_configs(env=None) -> List[tuple]:
     """(app, config file) for every AI app config this program registers with, whether or not it exists."""
     rows = [("Claude Desktop", p) for p in desktop_configs(env)]
     rows += [("Claude Code", claude_code_config(env)), ("Gemini CLI", gemini_settings(env)),
-             ("Antigravity", antigravity_config(env))]
+             ("Antigravity", antigravity_config(env)), ("VS Code", vscode_config(env))]
     return rows
 
 
 def server_entries(data: Dict) -> List[tuple]:
     """(where, name, entry) for each server in a config that is this program: named solidworks, or started from
     it (solidworks_mcp / solidworks-mcp in its command or arguments). Claude Code's per-folder servers count too."""
-    blocks = [("", data.get("mcpServers"))]
+    blocks = [("", data.get("mcpServers")), ("", data.get("servers"))]
     for folder, project in sorted((data.get("projects") or {}).items()):
         if isinstance(project, dict):
             blocks.append((f"folder {folder}: ", project.get("mcpServers")))
@@ -138,21 +146,22 @@ def _save(path: str, data: Dict) -> None:
     os.replace(temp, path)
 
 
-def register(path: str, install_dir: str, force: bool = False) -> str:
-    """Add or update our entry in one config file; the outcome in words."""
+def register(path: str, install_dir: str, force: bool = False, block: str = "mcpServers", extra: Dict = None) -> str:
+    """Add or update our entry in one config file; the outcome in words. block: the object that holds the servers;
+    extra: fields the app wants in the entry besides the command."""
+    wanted = {**(extra or {}), **entry(install_dir)}
     try:
         data = _load(path)
     except ValueError as e:
         return (f"skipped {path}: it is not plain JSON ({e}; comments count), so it was left as it is. Add this "
-                f"inside its \"mcpServers\" by hand: \"{NAME}\": {json.dumps(entry(install_dir))}")
-    servers = data.setdefault("mcpServers", {})
+                f"inside its \"{block}\" by hand: \"{NAME}\": {json.dumps(wanted)}")
+    servers = data.setdefault(block, {})
     if not isinstance(servers, dict):
-        return f"skipped {path}: mcpServers is not an object"
+        return f"skipped {path}: {block} is not an object"
     existing = servers.get(NAME)
     if existing is not None and not is_ours(existing, install_dir) and not force:
         return (f"kept {path}: its '{NAME}' server runs {existing.get('command')!r}, not this install "
                 f"(run the installer with -Force to replace it)")
-    wanted = entry(install_dir)
     if existing == wanted:
         return f"unchanged {path}"
     servers[NAME] = wanted
@@ -160,7 +169,7 @@ def register(path: str, install_dir: str, force: bool = False) -> str:
     return f"{'updated' if existing is not None else 'added'} {path}"
 
 
-def unregister(path: str, install_dir: str, force: bool = False) -> str:
+def unregister(path: str, install_dir: str, force: bool = False, block: str = "mcpServers") -> str:
     """Remove our entry from one config file; the outcome in words."""
     if not os.path.exists(path):
         return f"nothing in {path} (no file)"
@@ -168,7 +177,7 @@ def unregister(path: str, install_dir: str, force: bool = False) -> str:
         data = _load(path)
     except ValueError as e:
         return f"skipped {path}: it is not valid JSON ({e})"
-    servers = data.get("mcpServers")
+    servers = data.get(block)
     existing = servers.get(NAME) if isinstance(servers, dict) else None
     if existing is None:
         return f"nothing in {path}"
@@ -189,7 +198,8 @@ def main(argv=None) -> int:
     parser.add_argument("action", choices=("register", "unregister", "snippet"))
     parser.add_argument("--install-dir", required=True)
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--app", choices=("claude-desktop", "gemini", "antigravity"), default="claude-desktop")
+    parser.add_argument("--app", choices=("claude-desktop", "gemini", "antigravity", "vscode"),
+                        default="claude-desktop")
     args = parser.parse_args(argv)
     if args.action == "snippet":
         print(snippet(args.install_dir))
@@ -200,6 +210,9 @@ def main(argv=None) -> int:
         return 0
     if args.app == "antigravity":
         print(f"Antigravity (app and CLI): {antigravity(act, args.install_dir, args.force)}")
+        return 0
+    if args.app == "vscode":
+        print(f"VS Code: {vscode(act, args.install_dir, args.force)}")
         return 0
     for path in desktop_configs():
         print(f"Claude Desktop: {act(path, args.install_dir, args.force)}")
@@ -229,6 +242,29 @@ def antigravity_installed(env=None) -> Optional[str]:
         if env.get("LOCALAPPDATA") and os.path.isfile(found):
             return found
     return _on_path("agy", env) or (folder if os.path.isdir(folder) else None)
+
+
+def vscode_installed(env=None) -> Optional[str]:
+    """Where VS Code is, or None: per user or per machine, the code command, or its user data folder (it has run)."""
+    env = os.environ if env is None else env
+    for root, rest in ((env.get("LOCALAPPDATA"), ("Programs", "Microsoft VS Code")),
+                       (env.get("ProgramFiles"), ("Microsoft VS Code",))):
+        found = os.path.join(root, *rest, "Code.exe") if root else ""
+        if found and os.path.isfile(found):
+            return found
+    folder = os.path.dirname(os.path.dirname(vscode_config(env)))
+    return _on_path("code", env) or (folder if env.get("APPDATA") and os.path.isdir(folder) else None)
+
+
+def vscode(act, install_dir: str, force: bool = False, env=None) -> str:
+    """Register with (or unregister from) VS Code. Installed but never opened: its mcp.json is made now. Not
+    installed: nothing is written."""
+    path = vscode_config(env)
+    if act is register:
+        if not vscode_installed(env):
+            return "not installed: skipped"
+        return register(path, install_dir, force, block="servers", extra={"type": "stdio"})
+    return act(path, install_dir, force, block="servers")
 
 
 # Where Antigravity kept its MCP file before the app, IDE and CLI shared .gemini\config\mcp_config.json (the CLI

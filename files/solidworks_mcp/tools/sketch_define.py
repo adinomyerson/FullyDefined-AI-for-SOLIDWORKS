@@ -3,7 +3,7 @@
 import logging
 import math
 
-from ..core.api import Err, geometry, ok, sketch as sk, sw, tool, ToolError, units, value as _value
+from ..core.api import dimensions, Err, geometry, ok, sketch as sk, sw, tool, ToolError, units, value as _value
 
 logger = logging.getLogger(__name__)
 
@@ -471,7 +471,7 @@ def _add_sketch_relation(ctx, relation, entities, unit):
 
 @tool(
     group="sketch",
-    description="Add a driving dimension in the open sketch and optionally set its value. What gets measured follows from the entities: one line = length, circle = diameter, arc = radius, two points / a point and a line / two parallel lines = distance, two non-parallel lines = angle (degrees). The value must be greater than 0. A dimension that over-defines the sketch replaces a size the tools added from the drawing (named DrawnN; the result says which); one that conflicts with the user's own dimensions or relations, or that the sketch cannot satisfy, is rejected and not left in it, naming the conflicting dimensions. Several dimensions in one call: the others in more; if any is rejected, none of the call's stays. Returns the sketch's definition status.",
+    description="Add a driving dimension in the open sketch and optionally set its value. What gets measured follows from the entities: one line = length, circle = diameter, arc = radius, two points / a point and a line / two parallel lines = distance, two non-parallel lines = angle (degrees). The value must be greater than 0. A dimension that over-defines the sketch replaces a size the tools added from the drawing (named DrawnN; the result says which); one that conflicts with the user's own dimensions or relations, or that the sketch cannot satisfy, is rejected and not left in it, naming the conflicting dimensions. Several dimensions in one call: the others in more; if any is rejected, none of the call's stays. Returns the sketch's definition status. A value on a model with more than one configuration needs configurations: without it the call is refused, listing them.",
     params={'entities': {'type': 'array',
                   'items': {'type': 'string'},
                   'description': "Entity references as strings, e.g. ['1'], ['origin', '1:start'], "
@@ -492,15 +492,17 @@ def _add_sketch_relation(ctx, relation, entities, unit):
                         'required': ['entities']},
               'description': "Further dimensions in this call, e.g. [{'entities': ['origin', '2:start'], 'value': 20, "
                              "'orientation': 'horizontal'}]; same unit"},
-     'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'}},
+     'unit': {'type': 'string', 'description': 'mm, cm, m, inch or ft'},
+     'configurations': {'type': 'array', 'items': {'type': 'string'},
+                        'description': 'Configuration names to change, or ["all"]. Needed when the model has more than one configuration; with one, leave it out.'}},
     required=['entities'],
     needs='any',
 )
-def add_sketch_dimension(ctx, entities, value=None, unit=None, orientation="auto", more=None):
-    return _add_sketch_dimension(ctx, entities, value, unit, orientation, more)
+def add_sketch_dimension(ctx, entities, value=None, unit=None, orientation="auto", more=None, configurations=None):
+    return _add_sketch_dimension(ctx, entities, value, unit, orientation, more, configurations)
 
 
-def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
+def _add_sketch_dimension(ctx, entities, value, unit, orientation, more, configurations=None):
     doc = ctx.doc
     sketch = sk.active_sketch(doc)
     asks = [{"entities": entities, "value": value, "orientation": orientation}]
@@ -520,14 +522,16 @@ def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
         if v is not None and (not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v)
                               or v <= 0):
             raise ToolError(f"{where}value must be a number greater than 0", Err.INPUT)
+    # a dimension at its drawn size is the same in every configuration: only a value has to say where it goes
+    plan = dimensions.where(doc, configurations) if any(a.get("value") is not None for a in asks) else dimensions.ACTIVE
     done, replaced = [], []                       # added (display, name, size as drawn); Drawn sizes taken out
     try:
-        results = [_one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced)
+        results = [_one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced, plan)
                    for n, ask in enumerate(asks)]
     except ToolError:
         for display, name, drawn in reversed(done):       # a refused call changes nothing: sizes back, then out
             try:
-                sw.editing.sw_set_dimension_value(sw.editing.sw_display_dimension(display), drawn)
+                dimensions.set_value(sw.editing.sw_display_dimension(display), drawn, plan)
             except Exception:
                 pass
             sw.sketch_define.sw_delete_dimension(doc, display, name)
@@ -542,6 +546,9 @@ def _add_sketch_dimension(ctx, entities, value, unit, orientation, more):
     texts = [f"{r['name']} = {r['value']}{r['unit']}" for r in results]
     message = f"Dimension{'s' if len(results) > 1 else ''} {', '.join(texts)}. Sketch status: {status}"
     gone = [r["replaced"] for r in results if r.get("replaced")]
+    if plan != dimensions.ACTIVE:
+        data["set_in"] = plan.text()
+        message += f". The values are set in {plan.text()}; the sketch status is the active configuration's"
     if gone:
         message += (". Replaced the drawn size" + ("s " if len(gone) > 1 else " ") + ", ".join(gone)
                     + " (added from the drawing, not by the user)")
@@ -586,7 +593,7 @@ def _text_place(ctx, doc, sketch, orientation):
         ((min(xs) + max(xs)) / 2, min(ys) - gap)
 
 
-def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced) -> dict:
+def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced, plan=dimensions.ACTIVE) -> dict:
     """Add one dimension; on a conflict, first let a Drawn size on the same entities give way. Appends what it
     added to done and what it took out to replaced (for the caller to undo a refused call)."""
     where = "" if n == 0 else f"more[{n - 1}]: "
@@ -610,9 +617,13 @@ def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced) -> 
         angular = int(_value(dim, "GetType")) == 1
         attempt.update(display=display, dim=dim, name=name, angular=angular)
 
-        def read_value():
-            raw = float(dim.SystemValue)
+        def shown(raw):
             return round(math.degrees(raw), 4) if angular else round(ctx.from_m(raw, unit), 4)
+
+        def read_value():
+            return shown(float(dim.SystemValue))
+
+        attempt["shown"] = shown
 
         attempt["read"] = read_value
         if int(dim.DrivenState) == 1:                    # it over-defines the sketch: comes in driven
@@ -634,7 +645,7 @@ def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced) -> 
                     sw.sketch_define.sw_delete_dimension(doc, display, name)
                     raise ToolError(f"{where}Not added: the value is larger than SolidWorks' modelling space "
                                     f"(500 m). Check the value and the unit.", Err.SKETCH)
-            code = sw.editing.sw_set_dimension_value(dim, system_value)
+            code = dimensions.set_value(dim, system_value, plan)
             if code != 0:
                 sw.sketch_define.sw_delete_dimension(doc, display, name)
                 raise ToolError(f"{where}Not added: SolidWorks refused the value {value} (code {code}).", Err.SKETCH)
@@ -643,7 +654,7 @@ def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced) -> 
         if status in sk.BROKEN and status_before not in sk.BROKEN:
             attempt["why"] = ("unsolvable", status)
             try:
-                sw.editing.sw_set_dimension_value(dim, drawn)
+                dimensions.set_value(dim, drawn, plan)
             except Exception:
                 pass
             sw.sketch_define.sw_delete_dimension(doc, display, name)
@@ -669,6 +680,9 @@ def _one_dimension(ctx, doc, sketch, ask, unit, unit_str, n, done, replaced) -> 
     row = {"name": attempt["name"], "kind": "angle_deg" if attempt["angular"] else "length",
            "value_as_drawn": attempt.get("as_drawn"), "value": attempt["read"](),
            "unit": "deg" if attempt["angular"] else unit_str}
+    if plan != dimensions.ACTIVE and value is not None:
+        row["configurations"] = {c: attempt["shown"](v) for c, v in dimensions.values(attempt["dim"], plan).items()}
+        row["value"] = value
     if gave_way:
         row["replaced"] = f"{gave_way[0]} ({round(ctx.from_m(gave_way[1], unit), 4)}{unit_str})"
     return row

@@ -33,6 +33,9 @@ DEFAULTS = {
     "lock_wait_s": 10,              # a call waits this long for another chat's call before it is refused
     "max_result_chars": 40000,      # a longer tool result is cut (about 10k tokens); 0 = no limit
     "know_how": True,               # the know-how: summary sent at start-up and solidworks_guide (false: a run without it)
+    "auto_save": True,              # save a document the server created after a tool changes it (core/autosave.py)
+    "auto_save_minutes": 5,         # at the first change 5 minutes or more after the last auto-save; 0: every change
+    "auto_save_versions": False,    # also keep each auto-saved version next to the file: part_v1.SLDPRT, part_v2 ...
 }
 
 FILE_NAME = "settings.json"

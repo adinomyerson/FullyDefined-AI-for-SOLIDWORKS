@@ -705,12 +705,12 @@ def restore_drawn(app, doc, sketch, item: Dict) -> bool:
     sw_common.sw_clear_selection(doc)
     if back is None:
         return False
-    from .sw import editing as sw_editing
+    from . import dimensions
     try:
         dim = back.GetDimension2(0)
         dim.Name = item["name"]
-        if item.get("size") is not None:
-            sw_editing.sw_set_dimension_value(dim, item["size"])
+        if item.get("size") is not None:                # a drawn size is the same in every configuration
+            dimensions.set_value(dim, item["size"], dimensions.EVERY)
     except Exception:
         pass
     return True

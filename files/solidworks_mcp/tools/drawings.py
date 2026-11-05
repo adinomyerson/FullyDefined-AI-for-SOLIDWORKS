@@ -434,7 +434,7 @@ def create_drawing(ctx, projection, front_direction=None, up=None, model_path=No
         except Exception as e:
             logger.warning(f"Isometric view failed: {e}")
 
-    if str(doc_title(drawing)).lower().startswith("draw"):     # named after the model, as SolidWorks' own 3 views do
+    if not doc_path(drawing):     # named after the model, as SolidWorks' own 3 views do
         sw.drawing.sw_set_title(drawing, os.path.splitext(os.path.basename(path))[0])
     if dimensions:
         sw.drawing.sw_refresh_views(drawing)

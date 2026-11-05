@@ -62,8 +62,8 @@ def solidworks(app, pid=None) -> List[str]:
                         f"version this server is tested on; some tools may behave differently.")
     if language.lower() != TESTED_LANGUAGE:
         warnings.append(f"SolidWorks runs in {language}, not English, the language this server is tested on; "
-                        f"names such as 'Sketch1' may differ (the standard planes and the origin are found in any "
-                        f"language).")
+                        f"names such as 'Sketch1' may differ, and some tools still look for the English names of "
+                        f"the standard planes and the origin.")
     for w in warnings:
         logger.warning(w)
     return warnings

@@ -20,7 +20,7 @@ import logging
 from collections import OrderedDict
 from typing import Optional
 
-from .com import doc_path, doc_title, null_object, value
+from .com import doc_path, doc_title, null_object, plane_feature_name, value
 
 logger = logging.getLogger(__name__)
 
@@ -210,15 +210,20 @@ def _component_origin_point(comp) -> str:
         return "Point1@" + _ENGLISH_ORIGIN
 
 
-def _select_origin_point(doc, append: bool = True) -> bool:
+def _select_origin_point(doc, append: bool = True, mark: int = 0) -> bool:
     """Select the origin's point as an object, for when the select by name (origin_point) fails: a SolidWorks whose
-    "Point1" is translated. The origin feature's own sketch holds that one point. False when it cannot be read."""
+    "Point1" is translated. The origin feature's own sketch holds that one point. The mark is kept (a caller such as
+    fully_define_sketch's datum needs it). False when it cannot be read."""
     try:
         feat = doc.FeatureByName(_origin_name(doc))
         points = list(value(value(feat, "GetSpecificFeature2"), "GetSketchPoints2") or [])
         if len(points) != 1:
             return False
-        return bool(points[0].Select4(append, null_object()))
+        data = null_object()
+        if mark:
+            data = value(value(doc, "SelectionManager"), "CreateSelectData")
+            data.Mark = mark
+        return bool(points[0].Select4(append, data))
     except Exception as e:
         logger.debug(f"the origin's point could not be selected as an object: {e}")
         return False
@@ -254,19 +259,43 @@ def fallback_origin_point(owner, component: bool = False) -> Optional[str]:
 
 
 def select_origin(doc, append: bool = True, mark: int = 0, after_english: bool = False) -> bool:
-    """Select the origin's point: "Point1@Origin" first (skipped when the caller has just tried it); when that fails
-    in a document whose origin has another name, that name, then the origin's point object (a translated Point1)."""
+    """Select the origin's point: "Point1@Origin" first (skipped when the caller has just tried it; it may raise, as
+    before); only when that fails: the name this document gives its origin (when it is not "Origin"), then the
+    origin's point as an object (a translated "Point1", whatever the origin's name). The mark is kept on every path.
+    When the English select succeeds the result is exactly as before; when it fails, the origin may now be selected
+    where before nothing was."""
     def by_name(name):
         try:
             return bool(doc.Extension.SelectByID2(name, "EXTSKETCHPOINT", 0, 0, 0, append, mark, null_object(), 0))
         except Exception:
             return False
-    if not after_english and by_name("Point1@" + _ENGLISH_ORIGIN):
+    if not after_english and doc.Extension.SelectByID2("Point1@" + _ENGLISH_ORIGIN, "EXTSKETCHPOINT", 0, 0, 0, append,
+                                                       mark, null_object(), 0):
         return True
     localized = fallback_origin_point(doc)
-    if localized is None:
-        return False
-    return by_name(localized) or _select_origin_point(doc, append)
+    if localized is not None and by_name(localized):
+        return True
+    return _select_origin_point(doc, append, mark)
+
+
+def select(doc, text, mark: int = 0, append: bool = True) -> Optional[str]:
+    """Select a plane by the word or name a tool was given ("Front", "Top Plane", "Plane1"): the English name first,
+    one select exactly as before; only when that fails, the name this document gives that standard plane. Returns
+    the name selected, or None. For tools: one line in place of plane_feature_name + sw_select_named. When the English
+    select succeeds the result is exactly as before; when it fails, the document's own standard plane may now be
+    selected where before nothing was (a localized template, or a renamed standard plane). A user plane that carries
+    the English name ("Front Plane") is taken first, as by name."""
+    name = plane_feature_name(text)                     # None and "" mean Front, as before
+    if doc.Extension.SelectByID2(name, "PLANE", 0, 0, 0, append, mark, null_object(), 0):   # may raise, as before
+        return name
+    localized = fallback_name(doc, text)
+    try:
+        if localized is not None and doc.Extension.SelectByID2(localized, "PLANE", 0, 0, 0, append, mark,
+                                                               null_object(), 0):
+            return localized
+    except Exception as e:
+        logger.debug(f"the localized plane {localized!r} could not be selected: {e}")
+    return None
 
 
 def feature(owner, text, component: bool = False):
