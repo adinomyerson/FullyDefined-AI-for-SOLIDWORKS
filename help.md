@@ -38,6 +38,9 @@ only what you change). For example:
   `drawing` (18), `export` (3). `core` (21 tools) and the guide are always on. This helps with apps that limit the
   number of tools.
 - `protected_paths` lists folders the server never writes into.
+- `auto_save` (true by default) saves a part the AI created and saved again as it works. Your own files, assemblies
+  and drawings are never auto-saved. `auto_save_minutes` (5) is the time between saves, 0 for every change.
+  `auto_save_versions` (false) also keeps each saved version next to the file: `part_v1.SLDPRT`, `part_v2.SLDPRT`.
 
 Restart your AI app after a change.
 
@@ -57,8 +60,9 @@ The installer replaces a `solidworks` server entry that another program added on
 
 ### Uninstall everything
 
-Settings > Apps > Installed apps > **SolidWorks MCP** > Uninstall keeps your settings and logs. To remove them too,
-run this in a Command Prompt:
+Settings > Apps > Installed apps > **SolidWorks MCP** > Uninstall (or double-click **Uninstall SolidWorks MCP** in
+`%LOCALAPPDATA%\solidworks-mcp`) removes the server from every app it was added to, its PATH entry and its folder.
+Your settings and logs stay, and so does uv. To remove the settings and logs too, run this in a Command Prompt:
 
 ```
 "%LOCALAPPDATA%\solidworks-mcp\Uninstall SolidWorks MCP.cmd" -Purge
@@ -80,9 +84,12 @@ It does the same as the `.exe`, in a console window.
   Gemini API key.
 - The app and its CLI share one MCP file, `%USERPROFILE%\.gemini\config\mcp_config.json`, which the installer
   writes. Gemini CLI uses `%USERPROFILE%\.gemini\settings.json`.
-- **Antigravity app:** Settings (bottom left) > Customizations > Installed MCP Servers lists `solidworks`. Click
-  Refresh if it is not there yet.
-- **CLIs:** start a new terminal and type `/mcp list` (`agy`) or `/mcp` (`gemini`): `solidworks` must show as
+- **Antigravity app:** install it from [antigravity.google/download](https://antigravity.google/download), then run
+  the installer (again, if you installed it before Antigravity). Its summary must say "Antigravity: registered"; if it
+  says "may be too old", update Antigravity first. Then Settings (bottom left) > Customizations > Installed MCP Servers
+  lists `solidworks`. Click Refresh if it is not there yet.
+- **CLIs:** install one (Gemini CLI: `npm install -g @google/gemini-cli`, which needs [Node.js](https://nodejs.org/)),
+  run the installer, start a new terminal and type `/mcp list` (`agy`) or `/mcp` (`gemini`): `solidworks` must show as
   connected. Gemini CLI connects only in a folder you trust.
 
 ### Other AI apps
@@ -99,7 +106,7 @@ Add this block to the app's MCP configuration (replace `<you>` with your Windows
 | Windsurf | its Cascade MCP settings ("View raw config") |
 | Cline | MCP Servers > Configure > "Configure MCP Servers" |
 | LM Studio | Program tab > Install > "Edit mcp.json" |
-| VS Code | `mcp.json` ("MCP: Open User Configuration"): the same entry under `"servers"`, with `"type": "stdio"` |
+| VS Code (GitHub Copilot) | The installer does this when you tick VS Code. By hand: `mcp.json` ("MCP: Open User Configuration"): the same entry under `"servers"`, with `"type": "stdio"` |
 | Codex CLI | `%USERPROFILE%\.codex\config.toml`: `[mcp_servers.solidworks]` with `command = '<the path>'` |
 
 The server lists about 120 tools. Cursor gives the model only about 40 tools (its own limit), fewer than building
@@ -113,10 +120,26 @@ servers, and this server must run on the SOLIDWORKS computer.
   start, and is guided not to invent a design size.
 - **Your templates and units stay as they are.** New parts, assemblies and drawings use your default templates; the
   result says which units and drafting standard they have.
-- **Face and edge ids last only until the geometry changes.** The assistant lists them again when needed.
-- **Renaming a part that assemblies use:** copy it (`copy_file`) and replace the component instead.
-- **SOLIDWORKS in English** is what it is tested with. Other languages may use different names for planes and
-  views.
+- **SOLIDWORKS in English** is what it is tested with. Parts and assemblies from templates in other languages work
+  too.
+- **Drawings of a part with configurations** read each dimension's value in the part's active configuration, not the
+  configuration a view shows.
+
+### What it cannot do
+
+- Path, slider, lock-to-sketch and magnetic mates, and routing: SOLIDWORKS does not offer them to add-on programs
+  (routing also needs SOLIDWORKS Premium).
+- Drawing views at an oblique angle (save a named view in the model instead).
+- Hole Wizard holes other than ISO; linear patterns along anything but the model axes.
+- Weldments: trim / extend, end caps, gussets, rotating a profile or moving its pierce point (tested with the ISO
+  tube profiles). Forming tools only in their library sizes.
+- A flat-pattern view or a cut-list table on a drawing (the assistant reads the cut list instead).
+- Rename a part so that closed assemblies follow it: copy it (`copy_file`) and replace the component instead.
+- Work while SOLIDWORKS shows a dialog: answer it in SOLIDWORKS, then try again.
+- Undo: the assistant reverses a step with the matching tool (deleting the feature, or setting a size back); a
+  deleted feature does not come back.
+- Strength checks (no simulation).
+- Face and edge ids last only until the geometry changes: the assistant lists them again.
 
 ## Licence
 

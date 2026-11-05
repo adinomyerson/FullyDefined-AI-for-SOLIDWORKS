@@ -1,5 +1,5 @@
 {
-  "updated": "0.3.1",
+  "updated": "0.5.0",
   "pass_within_percent": 0.5,
   "source": {
     "name": "SOLIDWORKS Practice Problems",
@@ -13,7 +13,7 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 551487.0,
-      "ours": 551486.96,
+      "ours": 551486.99,
       "difference_percent": -0.0,
       "status": "pass",
       "reason": ""
@@ -25,8 +25,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 171634.0,
-      "ours": 171564.47,
-      "difference_percent": -0.04,
+      "ours": 171634.17,
+      "difference_percent": 0.0,
       "status": "pass",
       "reason": ""
     },
@@ -37,7 +37,7 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 185177.0,
-      "ours": 185179.26,
+      "ours": 185179.47,
       "difference_percent": 0.0,
       "status": "pass",
       "reason": ""
@@ -49,8 +49,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 42225.0,
-      "ours": 42340.38,
-      "difference_percent": 0.27,
+      "ours": 42324.32,
+      "difference_percent": 0.24,
       "status": "pass",
       "reason": ""
     },
@@ -61,10 +61,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 2344.0,
-      "ours": 2356.98,
-      "difference_percent": 0.55,
-      "status": "partial",
-      "reason": "We couldn't resolve the depth of the small recess on the side boss from the drawing; our estimate came out slightly shallow."
+      "ours": 2341.98,
+      "difference_percent": -0.09,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 6.12",
@@ -73,10 +73,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 4630.0,
-      "ours": 5026.83,
-      "difference_percent": 8.57,
-      "status": "fail",
-      "reason": "We couldn't resolve the ball's size from the drawing; our estimate came out too large."
+      "ours": 4645.64,
+      "difference_percent": 0.34,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 7.7",
@@ -85,10 +85,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 771.0,
-      "ours": 770.35,
-      "difference_percent": -0.08,
-      "status": "pass",
-      "reason": ""
+      "ours": 766.72,
+      "difference_percent": -0.56,
+      "status": "partial",
+      "reason": "We couldn't resolve the blade's outer curve from the drawing, which gives it no size; our part came out slightly light."
     },
     {
       "name": "Practice Problem 7.8",
@@ -100,7 +100,7 @@
       "ours": 18306607.97,
       "difference_percent": -0.0,
       "status": "pass",
-      "reason": "Built with release 0.3.2, which fixed a slow dimensioning step."
+      "reason": ""
     },
     {
       "name": "Practice Problem 7.9",
@@ -109,10 +109,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 21908.0,
-      "ours": 21635.5,
-      "difference_percent": -1.24,
-      "status": "partial",
-      "reason": "We couldn't resolve a few small sizes from the drawing (the raised ears' outline and a recess depth); our part came out slightly light."
+      "ours": 21894.08,
+      "difference_percent": -0.06,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 7.10",
@@ -121,8 +121,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 113890.0,
-      "ours": 113889.38,
-      "difference_percent": -0.0,
+      "ours": 113890.41,
+      "difference_percent": 0.0,
       "status": "pass",
       "reason": ""
     },
@@ -145,8 +145,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 7151.0,
-      "ours": 7119.79,
-      "difference_percent": -0.44,
+      "ours": 7151.24,
+      "difference_percent": 0.0,
       "status": "pass",
       "reason": ""
     },
@@ -157,10 +157,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 571167.0,
-      "ours": 620288.12,
-      "difference_percent": 8.6,
-      "status": "fail",
-      "reason": "We couldn't resolve the cross rods from the drawing (the \"2\" in Section B-B); our part came out heavy."
+      "ours": 571951.57,
+      "difference_percent": 0.14,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 7.41",
@@ -169,8 +169,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 224373.0,
-      "ours": 224453.23,
-      "difference_percent": 0.04,
+      "ours": 224373.43,
+      "difference_percent": 0.0,
       "status": "pass",
       "reason": ""
     },
@@ -193,10 +193,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 53816.0,
-      "ours": 56749.93,
-      "difference_percent": 5.45,
-      "status": "fail",
-      "reason": "We couldn't resolve a few sizes from the drawing (the side web's angled face and how deep the lug cuts go); our part came out heavy."
+      "ours": 53816.02,
+      "difference_percent": 0.0,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 9.4A",
@@ -245,8 +245,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 13267.0,
-      "ours": 13463.63,
-      "difference_percent": 1.48,
+      "ours": 13354.55,
+      "difference_percent": 0.66,
       "status": "partial",
       "reason": "We couldn't resolve a few small features inside the jaw from the drawing; our part came out slightly heavy."
     },
@@ -257,10 +257,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 53246.0,
-      "ours": 54599.96,
-      "difference_percent": 2.54,
-      "status": "fail",
-      "reason": "We couldn't resolve the ring's size in Detail C from the drawing; our estimate came out too large."
+      "ours": 53242.11,
+      "difference_percent": -0.01,
+      "status": "pass",
+      "reason": ""
     },
     {
       "name": "Practice Problem 10.8A",
@@ -269,8 +269,8 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 431376.0,
-      "ours": 431596.54,
-      "difference_percent": 0.05,
+      "ours": 429892.08,
+      "difference_percent": -0.34,
       "status": "pass",
       "reason": ""
     },
@@ -281,10 +281,10 @@
       "quantity": "volume",
       "unit": "mm³",
       "official": 34035.0,
-      "ours": 35977.02,
-      "difference_percent": 5.71,
-      "status": "fail",
-      "reason": "We couldn't resolve the size of two openings from the drawing; our estimates came out too small."
+      "ours": 34034.73,
+      "difference_percent": -0.0,
+      "status": "pass",
+      "reason": ""
     }
   ]
 }
