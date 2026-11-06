@@ -362,9 +362,26 @@ def _slot_parts(doc, sketch, known, ends, width_m):
     return centreline, arcs, lines, new
 
 
+def _slot_angle_reference(doc, centreline, start, length_m):
+    """A horizontal construction line from the centreline's end at start, for the slot's angle; None (nothing left of
+    it) when SolidWorks will not draw or tie it: the angle is then named free."""
+    with sk.exact_input(doc):
+        line = sw.sketch_draw.sw_centerline(doc, start[0], start[1], start[0] + length_m / 2, start[1])
+    if line is None:
+        return None
+    end = next(p for p in (value(centreline, "GetStartPoint2"), value(centreline, "GetEndPoint2"))
+               if math.hypot(p.X - start[0], p.Y - start[1]) <= 1e-9)
+    if sw.sketch_draw.sw_relate(doc, [value(line, "GetStartPoint2"), end], "sgCOINCIDENT") \
+            and sw.sketch_draw.sw_relate(doc, [line], "sgHORIZONTAL2D"):
+        return line
+    sw.sketch_draw.sw_delete_entities(doc, [line])
+    sw.common.sw_clear_selection(doc)
+    return None
+
+
 @tool(
     group="sketch",
-    description="Add a straight slot to the open sketch: two half circles joined by two lines, around a construction centreline. x, y is the slot's centre, centre_distance the distance between the two arc centres, width the slot's width (twice the end radius), angle its direction from +X (0 = horizontal, the default; the result says so). At 0 or 90 degrees it is horizontal or vertical by a relation; centred on the origin it is tied there. In a part its centre distance and end radius (width / 2) become dimensions when the sketch is closed, unless set first: a slot on the origin at 0 or 90 degrees is then fully defined. At any other angle the angle stays free: dimension it from a reference line. Returns the ids of its entities.",
+    description="Add a straight slot to the open sketch: two half circles joined by two lines, around a construction centreline. x, y is the slot's centre, centre_distance the distance between the two arc centres, width the slot's width (twice the end radius), angle its direction from +X (0 = horizontal, the default; the result says so). At 0 or 90 degrees it is horizontal or vertical by a relation; centred on the origin it is tied there. In a part its centre distance and end radius (width / 2) become dimensions when the sketch is closed, unless set first: a slot on the origin is then fully defined. At any other angle it also gets a horizontal construction line, and its angle becomes a dimension from that line on closing. Returns the ids of its entities.",
     params={'x': {'type': 'number', 'description': "X of the slot's centre"},
      'y': {'type': 'number', 'description': "Y of the slot's centre"},
      'centre_distance': {'type': 'number', 'description': "Distance between the centres of the two end arcs"},
@@ -405,9 +422,17 @@ def draw_slot(ctx, x, y, centre_distance, width, angle=None, unit=None):
     unit_str = units.label(unit)
     data = {"centre_distance": centre_distance, "width": width, "angle": degrees + 0.0, "unit": unit_str,
             "angle_from": "given" if angle is not None else "default (0)"}
-    note = sk.new_entity_ids(doc, sketch, before, data, created=[centreline] + arcs + lines)
     square = abs(math.remainder(degrees, 90.0)) < 1e-9
-    if not square:
+    reference = None if square or doc_type(doc) != 1 else _slot_angle_reference(doc, centreline, ends[0], length_m)
+    note = sk.new_entity_ids(doc, sketch, before, data,
+                             created=[centreline] + arcs + lines + ([reference] if reference else []))
+    if reference:
+        half = turn / 2 if abs(math.remainder(degrees, 360.0)) <= 180 else turn / 2 + math.pi
+        sk.pend_size(doc, sketch, ctx.app, centreline, ends[0][0] + math.cos(half) * length_m / 3,
+                     ends[0][1] + math.sin(half) * length_m / 3, other=reference)
+        data["angle_reference"] = True
+        note += "; its angle is dimensioned from a horizontal construction line when the sketch is closed, unless set first"
+    elif not square:
         data["angle_free"] = True
         note += "; its angle is free: dimension it from a reference line"
     if cx_m == 0 and cy_m == 0 and doc_type(doc) == 1:

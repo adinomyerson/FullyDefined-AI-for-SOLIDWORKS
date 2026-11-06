@@ -8,7 +8,7 @@ import logging
 import time
 import traceback
 
-from . import files, uiguard, units
+from . import dialogs, files, uiguard, units
 from . import com
 from .com import doc_type
 from .connection import connection
@@ -148,6 +148,33 @@ class GuardedContext(Context):
         return app
 
 
+def _gone(name: str, e: BaseException):
+    """The result for a call during which SolidWorks closed or crashed, or was busy (a rejected call, a dialog open),
+    or None when SolidWorks answers (the exception is the tool's own: the internal error). Closed: the connection is
+    dropped, so the next call attaches to (or starts) SolidWorks afresh. Busy: the connection is kept
+    (connection.after_error says which)."""
+    state = connection.after_error(e)
+    if state is None:
+        return None
+    kind, what = state
+    if kind == "busy":
+        found = what["dialogs"]
+        data = {"solidworks_busy": True, "dialogs": [d["title"] for d in found]}
+        if what["com_code"]:
+            data["com_code"] = what["com_code"]
+        if found:
+            return Result(False, f"SolidWorks is waiting on a dialog: {dialogs.describe(found)}. Answer or close it in "
+                                 f"SolidWorks, then check what {name} did before repeating it.", Err.BUSY, data)
+        return Result(False, f"SolidWorks is busy and did not take {name}'s call. Wait until it is free (answer any "
+                             f"dialog open in SolidWorks), then check what {name} did before repeating it.",
+                      Err.BUSY, data)
+    connection.app, connection.pid = None, None
+    return Result(False, f"SolidWorks closed or stopped answering during {name}. What {name} was doing may be partly "
+                         f"made, or lost if SolidWorks closed without saving. Start SolidWorks again "
+                         f"(connect_solidworks), open the document and check it before repeating {name}.",
+                  Err.CONNECTION, {"solidworks_gone": True, "com_code": what})
+
+
 def run(name: str, arguments: dict) -> Result:
     """One tool call (_run_call), and afterwards SolidWorks' CommandInProgress put back as the call found it,
     whatever happened: success, refusal, an error, a call that ended after its time limit."""
@@ -187,8 +214,8 @@ def _run_call(name: str, arguments: dict) -> Result:
         result = e.result()
     except Exception as e:
         logger.error(f"{name} raised:\n{traceback.format_exc()}")
-        result = Result(False, f"Internal error in {name} (see log): {type(e).__name__}: {e}\n\n{SUPPORT_LINE}",
-                        Err.INTERNAL)
+        result = _gone(name, e) or Result(False, f"Internal error in {name} (see log): {type(e).__name__}: {e}\n\n"
+                                                 f"{SUPPORT_LINE}", Err.INTERNAL)
     result = backup.after(result, tool, args, ctx)     # a user's file copied at its first change, said once
     result = autosave.after(result, tool, args, ctx)   # then the changed document saved, when it has a file
     if result.success and tool.clears_selection:

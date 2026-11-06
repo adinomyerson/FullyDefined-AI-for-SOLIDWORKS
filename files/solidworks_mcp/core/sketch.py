@@ -426,13 +426,17 @@ def _dimension_rows(sketch) -> List[tuple]:
 _pending_sizes: Dict[tuple, list] = {}
 
 
-def pend_size(doc, sketch, app, entity, x_m: float, y_m: float, lone: bool = False) -> None:
+def pend_size(doc, sketch, app, entity, x_m: float, y_m: float, lone: bool = False, other=None) -> None:
     """Remember a drawn shape's size to dimension later (its text at x, y in metres). lone: a line's length, kept
-    only if the line still touches nothing when the sketch is closed (in a chain its length would be derived)."""
+    only if the line still touches nothing when the sketch is closed (in a chain its length would be derived).
+    other: a second segment; the size is then the dimension between the two (two lines: their angle, its text at
+    x, y deciding which of the angles), dimensioned on closing like the others."""
     try:
         key = (doc_title(doc), str(sketch.Name))
-        _pending_sizes.setdefault(key, []).append({"key": segment_key(entity), "x": x_m, "y": y_m, "app": app,
-                                                   "lone": lone})
+        item = {"key": segment_key(entity), "x": x_m, "y": y_m, "app": app, "lone": lone}
+        if other is not None:
+            item["other"] = segment_key(other)
+        _pending_sizes.setdefault(key, []).append(item)
     except Exception as e:
         logger.debug(f"Could not remember the shape's size: {e}")
 
@@ -451,8 +455,12 @@ def apply_sizes(doc, sketch) -> List[tuple]:
         entity = by_key.get(item["key"])
         if entity is None or (item.get("lone") and _joined(entity, by_key.values())):
             continue
+        other = by_key.get(item["other"]) if "other" in item else None
+        if "other" in item and other is None:
+            continue                                                    # its second entity is gone
         sw_common.sw_clear_selection(doc)
-        if not sw_define.sw_select_entity(entity):
+        if not sw_define.sw_select_entity(entity) or (other is not None and not sw_define.sw_select_entity(other)):
+            sw_common.sw_clear_selection(doc)
             continue
         with silent_dimensions(item["app"]):
             display = sw_define.sw_add_dimension(doc, "auto", item["x"], item["y"])
@@ -766,9 +774,11 @@ def forget_sizes(doc, sketch) -> None:
 
 
 def pending_keys(doc, sketch) -> List[tuple]:
-    """The segment keys (segment_key) with a drawn size still to dimension when the sketch is closed or defined."""
+    """The segment keys (segment_key) with a drawn size still to dimension when the sketch is closed or defined (a
+    size between two segments, an angle, is not one segment's size: not listed)."""
     try:
-        return [item["key"] for item in _pending_sizes.get((doc_title(doc), str(sketch.Name)), [])]
+        return [item["key"] for item in _pending_sizes.get((doc_title(doc), str(sketch.Name)), [])
+                if "other" not in item]
     except Exception:
         return []
 
@@ -778,7 +788,8 @@ def drop_pending(doc, sketch, key: tuple) -> bool:
     size it was drawn with no longer holds. It is not dimensioned on closing, and the entity is reported free like
     any other with no size. The other entities' sizes stay. True when one was dropped. key: a segment key
     (segment_key: integers), not an entity id; anything else is a programming error and raises TypeError. (A circle
-    trimmed into an arc keeps its radius: its size need not be dropped.)"""
+    trimmed into an arc keeps its radius: its size need not be dropped. An angle between two segments stays: a trim
+    or an extension keeps a line's direction.)"""
     if not isinstance(key, (tuple, list)) or not key or not all(isinstance(v, int) and not isinstance(v, bool)
                                                                     for v in key):
         raise TypeError(f"drop_pending takes a segment key (integers), not {key!r}")
@@ -789,7 +800,7 @@ def drop_pending(doc, sketch, key: tuple) -> bool:
     items = _pending_sizes.get(pending_key)
     if not items:
         return False
-    kept = [item for item in items if item["key"] != tuple(key)]
+    kept = [item for item in items if item["key"] != tuple(key) or "other" in item]   # an angle still holds
     if len(kept) == len(items):
         return False
     if kept:

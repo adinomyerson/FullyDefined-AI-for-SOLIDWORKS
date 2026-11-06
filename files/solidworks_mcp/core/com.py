@@ -37,6 +37,41 @@ def call_token() -> tuple:
     return call_number[0], threading.get_ident()
 
 
+# SolidWorks closed or crashed: the codes Windows gives when the other process is gone (pywin32's com_error, as its
+# hresult or the scode inside its excepinfo). Anything else is not taken as SolidWorks gone.
+GONE = {-2147023174: "RPC_S_SERVER_UNAVAILABLE", -2147023170: "RPC_S_CALL_FAILED",
+        -2147023169: "RPC_S_CALL_FAILED_DNE", -2147417848: "RPC_E_DISCONNECTED",
+        -2147221251: "CO_E_OBJNOTCONNECTED"}
+
+
+def com_codes(e: BaseException) -> list:
+    """The COM codes of a pywin32 com_error (hresult, text, excepinfo, argerr): its hresult and the scode inside."""
+    if type(e).__name__ != "com_error":
+        return []
+    args = getattr(e, "args", ()) or ()
+    codes = [args[0]] if args and isinstance(args[0], int) else []
+    info = args[2] if len(args) > 2 else None
+    if isinstance(info, tuple) and len(info) > 5 and isinstance(info[5], int):
+        codes.append(info[5])
+    return codes
+
+
+def gone_code(e: BaseException):
+    """The name of the code saying SolidWorks closed or crashed (GONE), or None for any other exception."""
+    found = [c for c in com_codes(e) if c in GONE]
+    return GONE[found[0]] if found else None
+
+
+# SolidWorks is there but did not take the call (a modal dialog open, or busy with something else): busy, never gone
+BUSY = {-2147418111: "RPC_E_CALL_REJECTED", -2147417846: "RPC_E_SERVERCALL_RETRYLATER"}
+
+
+def busy_code(e: BaseException):
+    """The name of the code saying SolidWorks rejected the call because it is busy (BUSY), or None."""
+    found = [c for c in com_codes(e) if c in BUSY]
+    return BUSY[found[0]] if found else None
+
+
 def value(obj, name: str):
     """A member that is a property in one SolidWorks version and a method in another.
     Never test with callable(): COM objects are callable."""

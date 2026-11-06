@@ -40,6 +40,30 @@ def sw_slot(doc, cx_m: float, cy_m: float, ex_m: float, ey_m: float, width_m: fl
     return doc.SketchManager.CreateSketchSlot(1, 0, width_m, cx_m, cy_m, 0, ex_m, ey_m, 0, 0, 0, 0, 1, False)
 
 
+
+def sw_select(doc, items) -> bool:
+    """Select exactly these sketch points or segments; False (nothing selected) when one cannot be."""
+    sw_clear_selection(doc)
+    if all(item.Select4(n > 0, null_object()) for n, item in enumerate(items)):
+        return True
+    sw_clear_selection(doc)
+    return False
+
+
+def sw_relate(doc, items, constraint: str) -> bool:
+    """Select the items (sketch points or segments) and add one relation (sgCOINCIDENT, sgHORIZONTAL2D, ...)."""
+    try:
+        if not sw_select(doc, items):
+            return False
+        doc.SketchAddConstraints(constraint)
+        sw_clear_selection(doc)
+        return True
+    except Exception as e:
+        logger.debug(f"Relation {constraint} not added: {e}")
+        sw_clear_selection(doc)
+        return False
+
+
 def sw_point(doc, x_m: float, y_m: float):
     return doc.SketchManager.CreatePoint(x_m, y_m, 0)
 

@@ -17,7 +17,7 @@ import pythoncom
 import win32com.client
 
 from . import install, settings
-from .com import value
+from .com import busy_code, gone_code, value
 from .results import Err, ToolError
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,50 @@ class Connection:
             self.app = None
             self.revision = None
             return False
+
+    def after_error(self, e: BaseException) -> Optional[tuple]:
+        """What the exception e says about SolidWorks: ("gone", code) when it closed or crashed, ("busy", what) when
+        it is there but did not take the call, None when it answers (the error is the tool's own).
+        In order: a gone COM code (com.GONE) is gone; a rejected call (com.BUSY) is busy; with no SolidWorks attached,
+        None (nothing read); a modal dialog open in SolidWorks is busy (windows only, no SolidWorks read); then one
+        read of RevisionNumber: an answer is None, a rejected read is busy, anything else is gone (a late-bound object
+        of a SolidWorks that has closed raises AttributeError, win32com's dynamic __getattr__, not a com_error).
+        `what` is {"com_code": name} or {"dialogs": [...]} (core/dialogs.py's list)."""
+        code = gone_code(e)
+        if code is not None:
+            return "gone", code
+        code = busy_code(e)
+        if code is not None:
+            return "busy", {"com_code": code, "dialogs": self._dialogs()}
+        if self.app is None:
+            return None
+        found = self._dialogs()
+        if found:
+            return "busy", {"com_code": None, "dialogs": found}
+        try:
+            self.revision = value(self.app, "RevisionNumber")
+            return None
+        except Exception as probe:
+            logger.info(f"SolidWorks does not answer after {type(e).__name__}: {type(probe).__name__}: {probe}")
+            code = busy_code(probe)
+            if code is not None:
+                return "busy", {"com_code": code, "dialogs": []}
+            return "gone", gone_code(probe) or "NO_ANSWER"
+
+    def gone(self, e: BaseException) -> Optional[str]:
+        """The code saying SolidWorks closed or crashed after the exception e (after_error), or None: busy or
+        answering is never gone."""
+        state = self.after_error(e)
+        return state[1] if state and state[0] == "gone" else None
+
+    def _dialogs(self) -> list:
+        """The modal dialogs SolidWorks shows (core/dialogs.py), [] when none or when they cannot be listed."""
+        try:
+            from . import dialogs
+            return dialogs.find_dialogs(self.pid)
+        except Exception as e:
+            logger.debug(f"Dialog check failed: {e}")
+            return []
 
     def version(self) -> str:
         return str(value(self.app, "RevisionNumber"))

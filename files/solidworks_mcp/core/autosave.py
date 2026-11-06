@@ -27,6 +27,9 @@ A save that fails never fails the call: the result says plainly that the change 
 the server created, the data always says what happened, with no words in the message: "auto_save": saved, not due,
 sketch open, unchanged, off, not for assemblies and drawings, protected folder, failed, no backup; a save adds
 "auto_saved": path. So the AI can tell a change that is still in SOLIDWORKS only.
+If SOLIDWORKS closes or crashes during the save, the result says so in plain words (the change is lost if SOLIDWORKS
+closed without saving), the data adds solidworks_gone and com_code, and the connection is dropped, as the runner
+does for a call during which SOLIDWORKS closed.
 
 Cost: no SOLIDWORKS read for a document with no file, a user's file, a call before the interval is up, or when
 auto_save is off; otherwise the open-sketch check, the changed flag and the save itself.
@@ -191,6 +194,10 @@ def _after(result: Result, tool) -> Result:
         saved, error, warning = document.save_in_place(doc)
         error = f"SOLIDWORKS error code {error}" if error else "SOLIDWORKS did not save it"
     except Exception as e:
+        from .connection import connection
+        gone = connection.gone(e)                       # a gone code, or a non-COM error and SOLIDWORKS not answering
+        if gone is not None:
+            return _gone_while_saving(result, entry["path"], gone)
         saved, error = False, f"{type(e).__name__}: {e}"
     finally:
         _saving["path"] = None
@@ -208,6 +215,21 @@ def _after(result: Result, tool) -> Result:
         result.data["auto_saved_version"] = version
     return _say(result, "saved")
 
+
+
+def _gone_while_saving(result: Result, path: str, code: str) -> Result:
+    """SOLIDWORKS closed or crashed during the auto-save: the change is not in SOLIDWORKS any more, so the result
+    must not say it is. The connection is dropped (the next call attaches to, or starts, SOLIDWORKS afresh), as the
+    runner does for a call during which SOLIDWORKS closed."""
+    from .connection import connection
+    connection.app, connection.pid = None, None
+    logger.warning(f"auto-save of {path}: SOLIDWORKS closed or stopped answering ({code})")
+    _note(result, f"SOLIDWORKS closed or stopped answering while auto-saving {path}, so this change was not saved "
+                  f"and is lost if SOLIDWORKS closed without saving. Start SOLIDWORKS again (connect_solidworks), "
+                  f"open {path} and check it before going on.")
+    result.data = dict(result.data or {})
+    result.data.update(solidworks_gone=True, com_code=code)
+    return _say(result, "failed")
 
 def forget() -> None:
     """Tests: a new session."""

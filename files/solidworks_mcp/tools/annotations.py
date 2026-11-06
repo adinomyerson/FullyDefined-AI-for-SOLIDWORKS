@@ -390,13 +390,14 @@ def add_center_marks(ctx, view):
 
 @tool(
     group="drawing",
-    description="Add centrelines to a drawing view: SolidWorks puts one on every cylinder, cone and slot seen from the side that has none (a template can add them when the view is made). Returns how many were added and how many the view now has; SolidWorks gives no position for a centreline.",
-    params={"view": {"type": "string", "description": "View name from list_drawing_views"}},
-    required=["view"],
+    description="Add centrelines to a drawing view, or with no view to every view on the active sheet: SolidWorks puts one on every cylinder, cone and slot seen from the side that has none (a template can add them when the view is made). Returns how many were added and how many the view now has; SolidWorks gives no position for a centreline.",
+    params={"view": {"type": "string", "description": "View name from list_drawing_views. Leave out for every view on the active sheet"}},
     needs="drawing",
 )
-def add_centerlines(ctx, view):
+def add_centerlines(ctx, view=None):
     drawing = ctx.doc
+    if view is None or (isinstance(view, str) and not view.strip()):
+        return _centerlines_all_views(drawing)
     target = dwg.find_view(drawing, view, "add_centerlines")
     before = sw.drawing.sw_centerline_count(target)
     called = sw.drawing.sw_auto_centerlines(drawing, target)
@@ -417,6 +418,35 @@ def add_centerlines(ctx, view):
                   dict(data, changed=False))
     raise ToolError(f"SolidWorks found nothing in {target.Name} for a centreline (no cylinder seen from the side)",
                     Err.INPUT)
+
+
+def _centerlines_all_views(drawing):
+    """add_centerlines with no view: each view of the active sheet in turn. A view with nothing for a centreline is
+    normal here (the shaft seen end-on); only a drawing with nothing in any view is refused."""
+    found = dwg.views(drawing)
+    if not found:
+        raise ToolError("The drawing has no views.", Err.INPUT)
+    rows = []
+    for target in found:
+        before = sw.drawing.sw_centerline_count(target)
+        sw.drawing.sw_auto_centerlines(drawing, target)
+        sw.drawing.sw_finish(drawing)
+        after = sw.drawing.sw_centerline_count(target)
+        rows.append({"view": str(target.Name), "added": after - before, "centerlines": after})
+    data = {"views": rows, "added": sum(r["added"] for r in rows), "centerlines": sum(r["centerlines"] for r in rows)}
+    lost = [r["view"] for r in rows if r["added"] < 0]
+    if lost:
+        raise ToolError(f"{', '.join(lost)} lost centrelines: check the drawing", Err.FEATURE, data)
+    if not data["centerlines"]:
+        raise ToolError(f"SolidWorks found nothing for a centreline in any view ({', '.join(r['view'] for r in rows)}): "
+                        "no cylinder, cone or slot is seen from the side", Err.INPUT)
+    added = [f"{r['view']} {r['added']}" for r in rows if r["added"]]
+    none = [r["view"] for r in rows if not r["centerlines"]]
+    message = (f"Added {data['added']} centreline(s): {', '.join(added)}" if added
+               else f"Every view that can have one already has its centrelines ({data['centerlines']}); SolidWorks added none")
+    if none:
+        message += f". Nothing for a centreline in {', '.join(none)}"
+    return ok(message, dict(data, changed=bool(added)))
 
 
 def _decimals(number, name: str) -> int:
@@ -719,7 +749,7 @@ def add_bom_column(ctx, property, title=None):
 
 @tool(
     group="drawing",
-    description="Add a bill of materials table to a drawing of an assembly: item number, part name and quantity per component. bom_type: top_level (default; a sub-assembly counts as one item), parts_only or indented. The table goes in the top right corner of the sheet unless x_sheet / y_sheet give its top right corner. Returns the table's rows.",
+    description="Add a bill of materials table to a drawing of an assembly: item number, part name and quantity per component. With SOLIDWORKS' default table the columns are ITEM NO., PART NUMBER (the file name unless the part says otherwise, not a custom property) and QTY.; add_bom_column adds a property's own column. bom_type: top_level (default; a sub-assembly counts as one item), parts_only or indented. The table goes in the top right corner of the sheet unless x_sheet / y_sheet give its top right corner. Returns the table's rows.",
     params={"view": {"type": "string", "description": "A view of the assembly (default: the first one)"},
             "bom_type": {"type": "string", "enum": ["top_level", "parts_only", "indented"], "default": "top_level",
                          "description": "What the table lists"},

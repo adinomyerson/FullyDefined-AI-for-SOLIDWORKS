@@ -145,7 +145,7 @@ others). `delete_component`: then `list_mates` and say what is free. Exploded vi
 **E. A finished drawing** (draft). Save the model, then `create_drawing` with the user's sheet size and projection
 (first angle for ISO, third for ANSI; ask if not given). Then as wanted: `add_section_view`, `add_detail_view`,
 `add_drawing_dimension` (ids from `list_drawing_views`), `arrange_dimensions`, `set_title_block`, `add_center_marks`
-and `add_centerlines` on views with round features, `set_dimension_precision` last, per view (later dimensions keep
+on round views, `add_centerlines` with no view (all views), `set_dimension_precision` last, per view (later dimensions keep
 the template's decimals). Assembly: `add_bom_table`, `add_balloons`; a material or part-number column needs the
 property on every part first (`open_document` it, `set_custom_properties`, save; material as the link
 '"SW-Material@Bracket.SLDPRT"', file name only, quotes included), then `add_bom_column`. Save (.SLDDRW), `export_pdf`.
