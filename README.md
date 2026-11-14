@@ -2,6 +2,8 @@
 
 **Tell your AI app what to build. It builds it in SOLIDWORKS, fully defined and measured, and you keep working on it like any part you made yourself.**
 
+[![FullyDefined – AI for SOLIDWORKS MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/adinomyerson/FullyDefined-AI-for-SOLIDWORKS/badges/score.svg)](https://glama.ai/mcp/servers/adinomyerson/FullyDefined-AI-for-SOLIDWORKS)
+
 <p>
   <img src="https://adinomyerson.github.io/FullyDefined-AI-for-SOLIDWORKS/images/examples/hinge.png" width="32%" alt="A door hinge assembly the AI built">
   <img src="https://adinomyerson.github.io/FullyDefined-AI-for-SOLIDWORKS/images/examples/frame.png" width="32%" alt="A welded workbench frame the AI built">
